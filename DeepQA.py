@@ -189,72 +189,29 @@ def create_variable(tensor):
         return Variable(tensor)
 
 
-
-
-data_path = "C:/Users/Pascal/Documents/Vorlesungen/WS17/NN Praktikum/tasks_1-20_v1-2.tar/"
-
-
-# Default QA1 with 1000 samples
-# challenge = 'tasks_1-20_v1-2/en/qa1_single-supporting-fact_{}.txt'
-# QA1 with 10,000 samples
-# challenge = 'tasks_1-20_v1-2/en-10k/qa1_single-supporting-fact_{}.txt'
-# QA2 with 1000 samples
-challenge = 'tasks_1-20_v1-2/en/qa2_two-supporting-facts_{}.txt'
-# QA2 with 10,000 samples
-# challenge = 'tasks_1-20_v1-2/en-10k/qa2_two-supporting-facts_{}.txt'
-train = challenge.format('train')
-test = challenge.format('test')
-
-path = data_path+train
-
-train = get_stories(open(data_path+challenge.format('train'), 'r'))
-test = get_stories(open(data_path+challenge.format('test'), 'r'))
-
-vocab = set()
-for story, q, answer in train + test:
-    vocab |= set(story + q + [answer])
-vocab = sorted(vocab)
-
-# Reserve 0 for masking via pad_sequences
-# Vocabluary Size
-vocab_size = len(vocab) + 1
-#Creates Dictionary
-word_idx = dict((c, i + 1) for i, c in enumerate(vocab))
-
-#Max Length of Story and Query
-story_maxlen = max(map(len, (x for x, _, _ in train + test)))
-query_maxlen = max(map(len, (x for _, x, _ in train + test)))
-
-x, xq, y, xl, xql,= vectorize_stories(train, word_idx, story_maxlen, query_maxlen)
-tx, txq, ty, txl, txql = vectorize_stories(test, word_idx, story_maxlen, query_maxlen)
-
-train_dataset = QADataset(x,xq,y,xl,xql)
-BATCH_SIZE=32
-train_loader = DataLoader(dataset=train_dataset,batch_size=BATCH_SIZE, shuffle=True)
-
-
-class RNNClassifier(nn.Module):
+class QAModel(nn.Module):
     # Our model
 
-    def __init__(self, input_size, embedding_size, hidden_size, output_size, n_layers=1, bidirectional=False):
-        super(RNNClassifier, self).__init__()
+    def __init__(self, input_size, embedding_size, story_hidden_size, query_hidden_size, output_size, n_layers=1, bidirectional=False):
+        super(QAModel, self).__init__()
 
         self.embedding_size = embedding_size
-        self.hidden_size = hidden_size
+        self.story_hidden_size = story_hidden_size
+        self.query_hidden_size = query_hidden_size
         self.n_layers = n_layers
         self.n_directions = int(bidirectional) + 1
 
         self.story_embedding = nn.Embedding(input_size, embedding_size) #Embedding bildet ab von Vokabular (Indize) auf n-dim Raum
         # self.dropout_1 = nn.Dropout(0.3)
-        self.story_rnn = nn.GRU(embedding_size, embedding_size, n_layers,
+        self.story_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers,
                                 bidirectional=bidirectional)
 
         self.query_embedding = nn.Embedding(input_size, embedding_size)
         # self.dropout_2 = nn.Dropout(0.3)
-        self.query_rnn = nn.GRU(embedding_size, embedding_size, n_layers,
+        self.query_rnn = nn.GRU(embedding_size, query_hidden_size, n_layers,
                                 bidirectional=bidirectional)
 
-        self.fc = nn.Linear(2 * embedding_size, output_size)
+        self.fc = nn.Linear(story_hidden_size+query_hidden_size, output_size)
         self.softmax = nn.LogSoftmax()
 
     def forward(self, story, query, story_lengths, query_lengths):
@@ -268,13 +225,13 @@ class RNNClassifier(nn.Module):
         batch_size = story.size(1)
 
         # Make a hidden
-        query_hidden = self._init_hidden(batch_size)
-        story_hidden = self._init_hidden(batch_size)
+        story_hidden = self._init_hidden(batch_size, self.story_hidden_size)
         #print(story_hidden.size())
+        query_hidden = self._init_hidden(batch_size, self.query_hidden_size)
 
         #print(story.size())
         s_e = self.story_embedding(story)   # jedes einzelne Wort wird in das Embedding abgebildet, deshalb hat man nun 552x32
-                                            # Embeddings der Größe 90. --> 552x32x90
+                                            # Embeddings der Größe EMBBEDDING_SIZE. --> 552x32xEMBBEDDING_SIZE
         #print(s_e.size())
         # s_e = self.dropout_1(s_e)
         packed_story = torch.nn.utils.rnn.pack_padded_sequence(s_e, story_lengths.data.cpu().numpy())  # pack story
@@ -304,31 +261,67 @@ class RNNClassifier(nn.Module):
 
         return sm_output
 
-    def _init_hidden(self, batch_size):
+    def _init_hidden(self, batch_size, hidden_size):
         hidden = torch.zeros(self.n_layers * self.n_directions,
-                             batch_size, self.hidden_size)
+                             batch_size, hidden_size)
         return create_variable(hidden)
 
 
+data_path = "C:/Users/Pascal/Documents/Vorlesungen/WS17/NN Praktikum/tasks_1-20_v1-2.tar/"
+
+challenge = 'tasks_1-20_v1-2/en/qa2_two-supporting-facts_{}.txt'
+
+train = challenge.format('train')
+test = challenge.format('test')
+
+path = data_path+train
+
+train = get_stories(open(data_path+challenge.format('train'), 'r'))
+test = get_stories(open(data_path+challenge.format('test'), 'r'))
+
+vocab = set()
+for story, q, answer in train + test:
+    vocab |= set(story + q + [answer])
+vocab = sorted(vocab)
+
+# Reserve 0 for masking via pad_sequences
+# Vocabluary Size
+vocab_size = len(vocab) + 1
+#Creates Dictionary
+word_idx = dict((c, i + 1) for i, c in enumerate(vocab))
+
+#Max Length of Story and Query
+story_maxlen = max(map(len, (x for x, _, _ in train + test)))
+query_maxlen = max(map(len, (x for _, x, _ in train + test)))
+
 # Parameters and DataLoaders
-EMBED_HIDDEN_SIZE = 90
-STORY_HIDDEN_SIZE = 90
-QUERY_HIDDEN_SIZE = 90
+EMBED_HIDDEN_SIZE = 50
+STORY_HIDDEN_SIZE = 100
+QUERY_HIDDEN_SIZE = 100
 BATCH_SIZE = 32
 EPOCHS = 40
 VOC_SIZE = vocab_size
 
-classifier = RNNClassifier(VOC_SIZE, EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, VOC_SIZE)
+x, xq, y, xl, xql,= vectorize_stories(train, word_idx, story_maxlen, query_maxlen)  # x: story, xq: query, y: answer, xl: story_lengths, xql: query_lengths
+tx, txq, ty, txl, txql = vectorize_stories(test, word_idx, story_maxlen, query_maxlen) # same naming but for test_data
 
+train_dataset = QADataset(x,xq,y,xl,xql)
+train_loader = DataLoader(dataset=train_dataset,batch_size=BATCH_SIZE, shuffle=True)
+
+test_dataset = QADataset(tx,txq,ty,txl,txql)
+test_loader = DataLoader(dataset=test_dataset,batch_size=BATCH_SIZE, shuffle=True)
+
+model = QAModel(VOC_SIZE, EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, VOC_SIZE)
 criterion = nn.CrossEntropyLoss()
-
-optimizer = torch.optim.Adam(classifier.parameters(), lr=0.001)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 
 
 # Train cycle
 def train():
     total_loss = 0
+
+    loss_history = []
 
     for i, (stories, queries, answers, sl, ql) in enumerate(train_loader, 1):
 
@@ -344,7 +337,7 @@ def train():
         ql, perm_idx = ql.sort(0, descending=True)
         queries = queries[perm_idx]
 
-        output = classifier(stories, queries, sl, ql)
+        output = model(stories, queries, sl, ql)
 
         loss = criterion(output, answers)
 
@@ -355,22 +348,70 @@ def train():
 
         total_loss += loss.data[0]
 
-        classifier.zero_grad()
+        loss_history.append(loss.data[0])
+
+        model.zero_grad()
         loss.backward()
         optimizer.step()
 
-        if i % 10 == 0:
+        if i % 1 == 0:
             print('[{}] Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.2f}'.format(
                 time_since(start), epoch, i *
                                           len(stories), len(train_loader.dataset),
                                           100. * i * len(stories) / len(train_loader.dataset),
-                                          total_loss / i * len(stories)))
+                                          loss.data[0]))
 
-    return total_loss
+    return loss_history, total_loss # loss per epoch
+
+
+def test():
+
+    print("evaluating trained model ...")
+    correct = 0
+    test_data_size = len(test_loader.dataset)
+
+    for stories, queries, answers, sl, ql in test_loader:
+        #for names, countries in test_loader:
+        stories = Variable(stories.type(torch.LongTensor))
+        queries = Variable(queries.type(torch.LongTensor))
+        answers = Variable(answers.type(torch.LongTensor))
+        sl = Variable(sl.type(torch.LongTensor))
+        ql = Variable(ql.type(torch.LongTensor))
+
+        # Sort tensors by their length
+        sl, perm_idx = sl.sort(0, descending=True)
+        stories = stories[perm_idx]
+        ql, perm_idx = ql.sort(0, descending=True)
+        queries = queries[perm_idx]
+
+        output = model(stories, queries, sl, ql)
+
+        pred = output.data.max(1)[1]
+        correct += pred.eq(answers.data.view_as(pred)).cpu().sum()
+
+    print('\nTest set: Accuracy: {}/{} ({:.0f}%)\n'.format(
+        correct, test_data_size, 100. * correct / test_data_size))
 
 
 start = time.time()
 print("Training for %d epochs..." % EPOCHS)
+
+l_history = []
+
 for epoch in range(1, EPOCHS + 1):
+
     # Train cycle
-    train()
+    epoch_history, total_loss = train()
+    test()
+
+    l_history = l_history+epoch_history
+
+    import matplotlib.pyplot as plt
+
+    plt.figure()
+    plt.plot(l_history)
+    plt.show()
+
+
+
+
