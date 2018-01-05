@@ -267,7 +267,7 @@ class QAModel(nn.Module):
         return create_variable(hidden)
 
 
-data_path = "C:/Users/Pascal/Documents/Vorlesungen/WS17/NN Praktikum/tasks_1-20_v1-2.tar/"
+data_path = "data/"
 
 challenge = 'tasks_1-20_v1-2/en/qa2_two-supporting-facts_{}.txt'
 
