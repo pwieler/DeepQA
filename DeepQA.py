@@ -190,8 +190,6 @@ def create_variable(tensor):
 
 
 class QAModel(nn.Module):
-    # Our model
-
     def __init__(self, input_size, embedding_size, story_hidden_size, query_hidden_size, output_size, n_layers=1, bidirectional=False):
         super(QAModel, self).__init__()
 
@@ -204,12 +202,12 @@ class QAModel(nn.Module):
         self.story_embedding = nn.Embedding(input_size, embedding_size) #Embedding bildet ab von Vokabular (Indize) auf n-dim Raum
         # self.dropout_1 = nn.Dropout(0.3)
         self.story_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers,
-                                bidirectional=bidirectional)
+                                bidirectional=bidirectional)#, dropout=0.3)
 
         self.query_embedding = nn.Embedding(input_size, embedding_size)
         # self.dropout_2 = nn.Dropout(0.3)
         self.query_rnn = nn.GRU(embedding_size, query_hidden_size, n_layers,
-                                bidirectional=bidirectional)
+                                bidirectional=bidirectional)#, dropout=0.3)
 
         self.fc = nn.Linear(story_hidden_size+query_hidden_size, output_size)
         self.softmax = nn.LogSoftmax()
@@ -269,12 +267,10 @@ class QAModel(nn.Module):
 
 data_path = "data/"
 
-challenge = 'tasks_1-20_v1-2/en/qa2_two-supporting-facts_{}.txt'
-
-train = challenge.format('train')
-test = challenge.format('test')
-
-path = data_path+train
+#challenge = 'tasks_1-20_v1-2/en/qa1_single-supporting-fact_{}.txt'
+#challenge = 'tasks_1-20_v1-2/en/qa2_two-supporting-facts_{}.txt'
+#challenge = 'tasks_1-20_v1-2/en/qa3_three-supporting-facts_{}.txt'
+challenge = 'tasks_1-20_v1-2/en/qa6_yes-no-questions_{}.txt'
 
 train = get_stories(open(data_path+challenge.format('train'), 'r'))
 test = get_stories(open(data_path+challenge.format('test'), 'r'))
@@ -290,6 +286,8 @@ vocab_size = len(vocab) + 1
 #Creates Dictionary
 word_idx = dict((c, i + 1) for i, c in enumerate(vocab))
 
+print(word_idx)
+
 #Max Length of Story and Query
 story_maxlen = max(map(len, (x for x, _, _ in train + test)))
 query_maxlen = max(map(len, (x for _, x, _ in train + test)))
@@ -298,9 +296,11 @@ query_maxlen = max(map(len, (x for _, x, _ in train + test)))
 EMBED_HIDDEN_SIZE = 50
 STORY_HIDDEN_SIZE = 100
 QUERY_HIDDEN_SIZE = 100
+N_LAYERS = 2
 BATCH_SIZE = 32
 EPOCHS = 40
 VOC_SIZE = vocab_size
+LEARNING_RATE = 0.001
 
 x, xq, y, xl, xql,= vectorize_stories(train, word_idx, story_maxlen, query_maxlen)  # x: story, xq: query, y: answer, xl: story_lengths, xql: query_lengths
 tx, txq, ty, txl, txql = vectorize_stories(test, word_idx, story_maxlen, query_maxlen) # same naming but for test_data
@@ -311,11 +311,12 @@ train_loader = DataLoader(dataset=train_dataset,batch_size=BATCH_SIZE, shuffle=T
 test_dataset = QADataset(tx,txq,ty,txl,txql)
 test_loader = DataLoader(dataset=test_dataset,batch_size=BATCH_SIZE, shuffle=True)
 
-model = QAModel(VOC_SIZE, EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, VOC_SIZE)
-criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+model = QAModel(VOC_SIZE, EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, VOC_SIZE, N_LAYERS)
+#criterion = nn.CrossEntropyLoss()
+criterion = nn.NLLLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-
+print(model)
 
 # Train cycle
 def train():
@@ -406,11 +407,11 @@ for epoch in range(1, EPOCHS + 1):
 
     l_history = l_history+epoch_history
 
-    import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
-    plt.figure()
-    plt.plot(l_history)
-    plt.show()
+plt.figure()
+plt.plot(l_history)
+plt.show()
 
 
 
