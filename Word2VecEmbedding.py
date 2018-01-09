@@ -54,6 +54,15 @@ def word_to_index(word):
     return vocabulary[word]
 
 
+def choose_target_randomly(context_idxs):
+    ids = [word_id for word_id in context_idxs if word_id is not None]
+
+    if len(ids) == 1:
+        return ids[0]
+
+    return ids[randint(0, len(ids) - 1)]
+
+
 def train(network: W2VSkipGramEmbedding, optimizer: optim.Optimizer, number_epochs=10):
     loss_calc = nn.NLLLoss()
 
@@ -64,10 +73,9 @@ def train(network: W2VSkipGramEmbedding, optimizer: optim.Optimizer, number_epoc
         epoch_loss = 0
 
         for (word_idx, context_idxs) in word_context:
-
             # Using a random context word for training
             network_input = autograd.Variable(torch.LongTensor([word_idx]))
-            network_target = autograd.Variable(torch.LongTensor([context_idxs[randint(0, 3)]]))
+            network_target = autograd.Variable(torch.LongTensor([choose_target_randomly(context_idxs)]))
 
             network.zero_grad()
 
@@ -103,7 +111,8 @@ def add_to_vocabulary(text: str):
 
 def word_to_id(word):
     # This is a trick entry for words that are non existent.
-    if word is None or word not in vocabulary: return len(vocabulary)
+    if word is None or word not in vocabulary:
+        return len(vocabulary)
 
     return vocabulary[word]
 
@@ -120,11 +129,15 @@ def add_to_data(text: str):
         w1a = words[i + 1] if i + 1 < len(words) else None
         w2a = words[i + 2] if i + 2 < len(words) else None
 
+        if w2p==None and w1p==None and w1a==None and w2a==None:
+            continue
+
         word_id = word_to_id(words[i])
+        context = (word_to_id(w2p), word_to_id(w1p), word_to_id(w1a), word_to_id(w2a))
 
         # Only add entry if word is in vocabulary
         if word_id != len(vocabulary):
-            word_context.append((word_id, (word_to_id(w2p), word_to_id(w1p), word_to_id(w1a), word_to_id(w2a))))
+            word_context.append((word_id, context))
 
 
 def file_to_vocabulary(path="data/qa2_two-supporting-facts_train.txt"):
