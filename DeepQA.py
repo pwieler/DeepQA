@@ -214,19 +214,22 @@ class QAModel(nn.Module):
         story_hidden = self._init_hidden(batch_size, self.story_hidden_size)
         query_hidden = self._init_hidden(batch_size, self.query_hidden_size)
 
+        # Create Story-Embeddings
         s_e = self.story_embedding(story)   # jedes einzelne Wort wird in das Embedding abgebildet, deshalb hat man nun 552x32
                                             # Embeddings der Größe EMBBEDDING_SIZE. --> 552x32xEMBBEDDING_SIZE
+
+        # packed Story-Embeddings into RNN --> unpack
         packed_story = torch.nn.utils.rnn.pack_padded_sequence(s_e, story_lengths.data.cpu().numpy())  # pack story
         story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
         unpacked_story, unpacked_story_len = torch.nn.utils.rnn.pad_packed_sequence(story_output)  # unpack story
 
 
         q_e = self.query_embedding(query)
-        packed_query = torch.nn.utils.rnn.pack_padded_sequence(q_e, query_lengths.data.cpu().numpy())  # pack query
-        query_output, query_hidden = self.query_rnn(packed_query, query_hidden)
-        unpacked_query, unpacked_query_len = torch.nn.utils.rnn.pad_packed_sequence(query_output)  # unpack query
+        #packed_query = torch.nn.utils.rnn.pack_padded_sequence(q_e, query_lengths.data.cpu().numpy())  # pack query
+        query_output, query_hidden = self.query_rnn(q_e, query_hidden)
+        #unpacked_query, unpacked_query_len = torch.nn.utils.rnn.pad_packed_sequence(query_output)  # unpack query
 
-        merged = torch.cat([unpacked_story[-1], unpacked_query[-1]],1)
+        merged = torch.cat([unpacked_story[-1], query_output[-1]],1)
         fc_output = self.fc(merged)
         sm_output = self.softmax(fc_output)
 
@@ -251,11 +254,13 @@ def train():
         sl = Variable(sl.type(torch.LongTensor))
         ql = Variable(ql.type(torch.LongTensor))
 
-        # Sort tensors by their length
+        # Sort stories by their length
         sl, perm_idx = sl.sort(0, descending=True)
         stories = stories[perm_idx]
-        ql, perm_idx = ql.sort(0, descending=True)
+        #ql, perm_idx = ql.sort(0, descending=True) # if we sort query also --> then they do not fit together!
+        ql = ql[perm_idx]
         queries = queries[perm_idx]
+        answers = answers[perm_idx]
 
         output = model(stories, queries, sl, ql)
 
@@ -291,16 +296,18 @@ def test():
         sl = Variable(sl.type(torch.LongTensor))
         ql = Variable(ql.type(torch.LongTensor))
 
-        # Sort tensors by their length
+        # Sort stories by their length
         sl, perm_idx = sl.sort(0, descending=True)
         stories = stories[perm_idx]
-        ql, perm_idx = ql.sort(0, descending=True)
+        #ql, perm_idx = ql.sort(0, descending=True) # if we sort query also --> then they do not fit together!
+        ql = ql[perm_idx]
         queries = queries[perm_idx]
+        answers = answers[perm_idx]
 
         output = model(stories, queries, sl, ql)
 
-        pred = output.data.max(1)[1]
-        correct += pred.eq(answers.data.view_as(pred)).cpu().sum()
+        pred_answers = output.data.max(1)[1]
+        correct += pred_answers.eq(answers.data.view_as(pred_answers)).cpu().sum() # calculate how many labels are correct
 
     print('\nTest set: Accuracy: {}/{} ({:.0f}%)\n'.format(
         correct, test_data_size, 100. * correct / test_data_size))
