@@ -183,6 +183,7 @@ class QAModel(nn.Module):
     def __init__(self, input_size, embedding_size, story_hidden_size, query_hidden_size, output_size, n_layers=1, bidirectional=False):
         super(QAModel, self).__init__()
 
+        self.voc_size = input_size
         self.embedding_size = embedding_size
         self.story_hidden_size = story_hidden_size
         self.query_hidden_size = query_hidden_size
@@ -191,11 +192,11 @@ class QAModel(nn.Module):
 
         self.story_embedding = nn.Embedding(input_size, embedding_size) #Embedding bildet ab von Vokabular (Indize) auf n-dim Raum
         self.story_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers,
-                                bidirectional=bidirectional)#, dropout=0.3)
+                                bidirectional=bidirectional)#, dropout=0.5)
 
         self.query_embedding = nn.Embedding(input_size, embedding_size)
         self.query_rnn = nn.GRU(embedding_size, query_hidden_size, n_layers,
-                                bidirectional=bidirectional)#, dropout=0.3)
+                                bidirectional=bidirectional)#, dropout=0.5)
 
         self.fc = nn.Linear(story_hidden_size+query_hidden_size, output_size)
         self.softmax = nn.LogSoftmax()
@@ -243,8 +244,13 @@ class QAModel(nn.Module):
 # Train cycle
 def train():
     total_loss = 0
+    correct = 0
+
+    train_data_size = len(train_loader.dataset)
 
     loss_history = []
+
+    model.train()
 
     for i, (stories, queries, answers, sl, ql) in enumerate(train_loader, 1):
 
@@ -281,9 +287,18 @@ def train():
                                           100. * i * len(stories) / len(train_loader.dataset),
                 loss.data[0]))
 
+        pred_answers = output.data.max(1)[1]
+        correct += pred_answers.eq(
+            answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
+
+    print('\nTraining set: Accuracy: {}/{} ({:.0f}%)\n'.format(
+        correct, train_data_size, 100. * correct / train_data_size))
+
     return loss_history, total_loss  # loss per epoch
 
 def test():
+
+    model.eval()
 
     print("evaluating trained model ...")
     correct = 0
@@ -349,9 +364,9 @@ query_maxlen = max(map(len, (x for _, x, _ in train_data + test_data)))
 EMBED_HIDDEN_SIZE = 50
 STORY_HIDDEN_SIZE = 100
 QUERY_HIDDEN_SIZE = 100
-N_LAYERS = 2
+N_LAYERS = 1
 BATCH_SIZE = 32
-EPOCHS = 40
+EPOCHS = 200
 VOC_SIZE = vocab_size
 LEARNING_RATE = 0.001
 
@@ -391,11 +406,13 @@ for epoch in range(1, EPOCHS + 1):
     # Test cycle
     test()
 
-    # Plot Loss
+    # Add Loss to history
     l_history = l_history+epoch_history
-    plt.figure()
-    plt.plot(l_history)
-    plt.show()
+
+# Plot Loss
+plt.figure()
+plt.plot(l_history)
+plt.show()
 
 
 
