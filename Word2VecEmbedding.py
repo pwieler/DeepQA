@@ -1,7 +1,9 @@
 import torch
+print("PyTorch Version: " + torch.__version__)
 import torch.nn as nn
 import torch.autograd as autograd
 import torch.optim as optim
+import torch.optim.lr_scheduler
 import torch.nn.functional as functional
 import math
 import re
@@ -64,7 +66,7 @@ def choose_target_randomly(context_idxs):
     return ids[randint(0, len(ids) - 1)]
 
 
-def train(network: W2VSkipGramEmbedding, optimizer: optim.Optimizer, number_epochs=1):
+def train(network: W2VSkipGramEmbedding, scheduler, number_epochs=1):
     loss_calc = nn.NLLLoss()
 
     print("Size of vocabulary: " + str(len(vocabulary)))
@@ -87,11 +89,11 @@ def train(network: W2VSkipGramEmbedding, optimizer: optim.Optimizer, number_epoc
 
             loss.backward()
 
-            optimizer.step()
+            scheduler.step()
 
             epoch_loss += loss.data
 
-        print("Loss of Epoch " + str(epoch) + ": " + str(epoch_loss[0]))
+        print("Loss of Epoch " + str(epoch) + ": " + str(epoch_loss[0]/len(word_context)))
 
 
 def add_to_vocabulary(text: str):
@@ -173,9 +175,12 @@ def main():
 
     w2v_net = W2VSkipGramEmbedding(our_custom_embedding)
 
-    optimizer = optim.SGD(w2v_net.parameters(), lr=0.01)
+    optimizer = optim.SGD(w2v_net.parameters(), lr=0.1)
 
-    train(w2v_net, optimizer, number_epochs=5)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 30, gamma=0.5)
+
+
+    train(w2v_net, scheduler, number_epochs=50)
 
     torch.save(our_custom_embedding.weight.data, "embedding.tensor")
 
