@@ -5,6 +5,7 @@ import torch.optim as optim
 import torch.nn.functional as functional
 import math
 import re
+import os
 
 from random import randint
 
@@ -63,7 +64,7 @@ def choose_target_randomly(context_idxs):
     return ids[randint(0, len(ids) - 1)]
 
 
-def train(network: W2VSkipGramEmbedding, optimizer: optim.Optimizer, number_epochs=10):
+def train(network: W2VSkipGramEmbedding, optimizer: optim.Optimizer, number_epochs=1):
     loss_calc = nn.NLLLoss()
 
     print("Size of vocabulary: " + str(len(vocabulary)))
@@ -76,6 +77,7 @@ def train(network: W2VSkipGramEmbedding, optimizer: optim.Optimizer, number_epoc
             # Using a random context word for training
             network_input = autograd.Variable(torch.LongTensor([word_idx]))
             network_target = autograd.Variable(torch.LongTensor([choose_target_randomly(context_idxs)]))
+
 
             network.zero_grad()
 
@@ -96,7 +98,7 @@ def add_to_vocabulary(text: str):
     word_set = set()
 
     for word_blob in text.split():
-        alnum_word = "".join([c for c in word_blob if c.isalnum()])
+        alnum_word = "".join([c for c in word_blob if c.isalpha()])
         symbols = "".join([c for c in word_blob if not c.isalnum()])
 
         if len(alnum_word) > 0:
@@ -129,11 +131,11 @@ def add_to_data(text: str):
         w1a = words[i + 1] if i + 1 < len(words) else None
         w2a = words[i + 2] if i + 2 < len(words) else None
 
-        if w2p==None and w1p==None and w1a==None and w2a==None:
-            continue
-
         word_id = word_to_id(words[i])
         context = (word_to_id(w2p), word_to_id(w1p), word_to_id(w1a), word_to_id(w2a))
+
+        if context == (word_to_id(None), word_to_id(None), word_to_id(None), word_to_id(None)):
+            continue
 
         # Only add entry if word is in vocabulary
         if word_id != len(vocabulary):
@@ -153,23 +155,29 @@ def file_to_data(path="data/qa2_two-supporting-facts_train.txt"):
 
 
 def main():
+
+
     file_to_vocabulary()
 
     file_to_data()
 
     # We want to represent a vocabulary with v one hot vectors by a feature vector with n features.
     # Add +1 to each to represent words that are not in the vocabulary.
-    v = len(vocabulary) + 10
-    n = math.log2(len(vocabulary)) + 1
+    v = len(vocabulary) + 1
+    n = 2*math.log2(len(vocabulary)) + 10
 
     our_custom_embedding = nn.Embedding(v, int(n))
+
+    if(os.path.isfile("embedding.tensor")):
+        our_custom_embedding.weight.data = torch.load("embedding.tensor")
 
     w2v_net = W2VSkipGramEmbedding(our_custom_embedding)
 
     optimizer = optim.SGD(w2v_net.parameters(), lr=0.01)
 
-    train(w2v_net, optimizer)
+    train(w2v_net, optimizer, number_epochs=5)
 
+    torch.save(our_custom_embedding.weight.data, "embedding.tensor")
 
 if __name__ == '__main__':
     main()
