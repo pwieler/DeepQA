@@ -38,13 +38,49 @@ def extract_stories(lines: List[str]):
     return indexed_lines
 
 
+def story_from_indexed_lines(lines):
+
+    stories = []
+
+    # Either there is no story or the story begins with a question
+    if len(lines) is 0 or len(lines[0]) > 2:
+        return []
+
+    current_story = []
+    current_story_line = 0
+    current_question = []
+    current_answer = None
+    current_hints = []
+
+    for line in lines:
+        current_story is [] if line[0] is 0 else current_story
+
+        if len(line)< 3:
+            current_story += line[1]
+        else:
+            current_question = line[1]
+            current_answer = line[2]
+            current_hints = line[3]
+
+            stories.append([current_story, current_question, current_answer, current_hints])
+            current_question = []
+            current_answer = None
+            current_hints = []
+
+    return stories
+
+
+
+
 def file_to_stories(path="data/qa2_two-supporting-facts_train.txt"):
     with open(path, 'r') as f:
         return extract_stories(f.readlines())
 
+#def token_to_tensor(stories, vocabulary, embedding):
+
 
 def main():
-    print(str(file_to_stories()))
+    print(str(story_from_indexed_lines(file_to_stories())))
 
 
 if __name__ == '__main__':
