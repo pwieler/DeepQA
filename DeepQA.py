@@ -208,7 +208,7 @@ class QAModel(nn.Module):
         story = story.t()
         query = query.t()
 
-        # story hat jetzt Dimension Sequenzlänge x Batchgröße --> z.B. 552x32 Wörter
+        # story hat jetzt Dimension Sequenzlaenge x Batchgroesse --> z.B. 552x32 Woerter
         batch_size = story.size(1)
 
         # Create hidden states for RNNs
@@ -217,7 +217,7 @@ class QAModel(nn.Module):
 
         # Create Story-Embeddings
         s_e = self.story_embedding(story)   # jedes einzelne Wort wird in das Embedding abgebildet, deshalb hat man nun 552x32
-                                            # Embeddings der Größe EMBBEDDING_SIZE. --> 552x32xEMBBEDDING_SIZE
+                                            # Embeddings der Groesse EMBBEDDING_SIZE. --> 552x32xEMBBEDDING_SIZE
 
         # packed Story-Embeddings into RNN --> unpack
         packed_story = torch.nn.utils.rnn.pack_padded_sequence(s_e, story_lengths.data.cpu().numpy())  # pack story
@@ -366,9 +366,11 @@ STORY_HIDDEN_SIZE = 100
 QUERY_HIDDEN_SIZE = 100
 N_LAYERS = 1
 BATCH_SIZE = 32
-EPOCHS = 200
+EPOCHS = 40
 VOC_SIZE = vocab_size
 LEARNING_RATE = 0.001
+
+PLOT_LOSS = False
 
 ## Create Test & Train-Data
 x, xq, y, xl, xql,= vectorize_stories(train_data, word_idx, story_maxlen, query_maxlen)  # x: story, xq: query, y: answer, xl: story_lengths, xql: query_lengths
@@ -410,9 +412,10 @@ for epoch in range(1, EPOCHS + 1):
     l_history = l_history+epoch_history
 
 # Plot Loss
-plt.figure()
-plt.plot(l_history)
-plt.show()
+if PLOT_LOSS:
+    plt.figure()
+    plt.plot(l_history)
+    plt.show()
 
 
 
