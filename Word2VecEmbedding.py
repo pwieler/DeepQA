@@ -8,6 +8,7 @@ import torch.nn.functional as functional
 import math
 import re
 import os
+import pickle
 
 from random import randint
 
@@ -183,6 +184,8 @@ def main():
     train(w2v_net, scheduler, number_epochs=50)
 
     torch.save(our_custom_embedding.weight.data, "embedding.tensor")
+
+    pickle.dump(vocabulary, open("vocabulary.pickle", "wb"))
 
 if __name__ == '__main__':
     main()
