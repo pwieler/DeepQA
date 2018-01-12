@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
+import torch.autograd as autograd
 
 # Some utility functions
 def time_since(since):
@@ -190,13 +191,14 @@ class QAModel(nn.Module):
         self.n_layers = n_layers
         self.n_directions = int(bidirectional) + 1
 
-        self.story_embedding = nn.Embedding(input_size, embedding_size) #Embedding bildet ab von Vokabular (Indize) auf n-dim Raum
+        self.story_embedding = nn.Embedding(self.voc_size, embedding_size) #Embedding bildet ab von Vokabular (Indize) auf n-dim Raum
 
-        self.story_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers,
+        self.story_rnn = nn.LSTM(embedding_size, story_hidden_size, n_layers,
                                 bidirectional=bidirectional)#, dropout=0.5)
 
-        self.query_embedding = nn.Embedding(input_size, embedding_size)
-        self.query_rnn = nn.GRU(embedding_size, query_hidden_size, n_layers,
+        self.query_embedding = nn.Embedding(self.voc_size, embedding_size)
+
+        self.query_rnn = nn.LSTM(embedding_size, query_hidden_size, n_layers,
                                 bidirectional=bidirectional)#, dropout=0.5)
 
         self.fc = nn.Linear(story_hidden_size+query_hidden_size, output_size)
@@ -206,11 +208,11 @@ class QAModel(nn.Module):
         # Note: we run this all at once (over the whole input sequence)
         # input shape: B x S (input size)
         # transpose to make S(sequence) x B (batch)
-        story = story.t()
-        query = query.t()
+        #story = story.t()
+        #query = query.t()
 
         # story hat jetzt Dimension Sequenzlaenge x Batchgroesse --> z.B. 552x32 Woerter
-        batch_size = story.size(1)
+        batch_size = story.size(0)
 
         # Create hidden states for RNNs
         story_hidden = self._init_hidden(batch_size, self.story_hidden_size)
@@ -221,26 +223,21 @@ class QAModel(nn.Module):
                                             # Embeddings der Groesse EMBBEDDING_SIZE. --> 552x32xEMBBEDDING_SIZE
 
         # packed Story-Embeddings into RNN --> unpack
-        packed_story = torch.nn.utils.rnn.pack_padded_sequence(s_e, story_lengths.data.cpu().numpy())  # pack story
-        story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
-        unpacked_story, unpacked_story_len = torch.nn.utils.rnn.pad_packed_sequence(story_output)  # unpack story
+        story_output, story_hidden = self.story_rnn(s_e.view(story.size(1), batch_size, self.embedding_size), story_hidden)
 
 
         q_e = self.query_embedding(query)
-        #packed_query = torch.nn.utils.rnn.pack_padded_sequence(q_e, query_lengths.data.cpu().numpy())  # pack query
-        query_output, query_hidden = self.query_rnn(q_e, query_hidden)
-        #unpacked_query, unpacked_query_len = torch.nn.utils.rnn.pad_packed_sequence(query_output)  # unpack query
+        query_output, query_hidden = self.query_rnn(q_e.view(query.size(1), batch_size, self.embedding_size), query_hidden)
 
-        merged = torch.cat([unpacked_story[-1], query_output[-1]],1)
+        merged = torch.cat([story_output[-1], query_output[-1]],1)
         fc_output = self.fc(merged)
         sm_output = self.softmax(fc_output)
 
         return sm_output
 
     def _init_hidden(self, batch_size, hidden_size):
-        hidden = torch.zeros(self.n_layers * self.n_directions,
-                             batch_size, hidden_size)
-        return Variable(hidden)
+        return (autograd.Variable(torch.zeros(self.n_layers * self.n_directions, batch_size, hidden_size)),
+                autograd.Variable(torch.zeros(self.n_layers * self.n_directions, batch_size, hidden_size)))
 
 # Train cycle
 def train():
