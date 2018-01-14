@@ -193,11 +193,11 @@ class QAModel(nn.Module):
         self.story_embedding = nn.Embedding(input_size, embedding_size) #Embedding bildet ab von Vokabular (Indize) auf n-dim Raum
 
         self.story_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers,
-                                bidirectional=bidirectional)#, dropout=0.5)
+                                bidirectional=bidirectional, batch_first=True, dropout=0.5)
 
         self.query_embedding = nn.Embedding(input_size, embedding_size)
         self.query_rnn = nn.GRU(embedding_size, query_hidden_size, n_layers,
-                                bidirectional=bidirectional)#, dropout=0.5)
+                                bidirectional=bidirectional, batch_first=True, dropout=0.5)
 
         self.fc = nn.Linear(story_hidden_size+query_hidden_size, output_size)
         self.softmax = nn.LogSoftmax()
@@ -206,11 +206,11 @@ class QAModel(nn.Module):
         # Note: we run this all at once (over the whole input sequence)
         # input shape: B x S (input size)
         # transpose to make S(sequence) x B (batch)
-        story = story.t()
-        query = query.t()
+        #story = story.t()
+        #query = query.t()
 
         # story hat jetzt Dimension Sequenzlaenge x Batchgroesse --> z.B. 552x32 Woerter
-        batch_size = story.size(1)
+        batch_size = story.size(0)
 
         # Create hidden states for RNNs
         story_hidden = self._init_hidden(batch_size, self.story_hidden_size)
@@ -221,17 +221,18 @@ class QAModel(nn.Module):
                                             # Embeddings der Groesse EMBBEDDING_SIZE. --> 552x32xEMBBEDDING_SIZE
 
         # packed Story-Embeddings into RNN --> unpack
-        packed_story = torch.nn.utils.rnn.pack_padded_sequence(s_e, story_lengths.data.cpu().numpy())  # pack story
+        packed_story = torch.nn.utils.rnn.pack_padded_sequence(s_e, story_lengths.data.cpu().numpy(), batch_first=True)  # pack story
         story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
-        unpacked_story, unpacked_story_len = torch.nn.utils.rnn.pad_packed_sequence(story_output)  # unpack story
+        #unpacked_story, unpacked_story_len = torch.nn.utils.rnn.pad_packed_sequence(story_output, batch_first=True)  # unpack story
 
 
         q_e = self.query_embedding(query)
-        #packed_query = torch.nn.utils.rnn.pack_padded_sequence(q_e, query_lengths.data.cpu().numpy())  # pack query
+        #packed_query = torch.nn.utils.rnn.pack_padded_sequence(q_e, query_lengths.data.cpu().numpy(), batch_first=True)  # pack query
         query_output, query_hidden = self.query_rnn(q_e, query_hidden)
-        #unpacked_query, unpacked_query_len = torch.nn.utils.rnn.pad_packed_sequence(query_output)  # unpack query
+        #unpacked_query, unpacked_query_len = torch.nn.utils.rnn.pad_packed_sequence(query_output, batch_first=True)  # unpack query
 
-        merged = torch.cat([unpacked_story[-1], query_output[-1]],1)
+        merged = torch.cat([story_hidden[0], query_hidden[0]],1)
+        merged = merged.view(batch_size, -1)
         fc_output = self.fc(merged)
         sm_output = self.softmax(fc_output)
 
@@ -249,7 +250,7 @@ def train():
 
     train_data_size = len(train_loader.dataset)
 
-    loss_history = []
+    train_loss_history = []
 
     model.train()
 
@@ -275,7 +276,7 @@ def train():
 
         total_loss += loss.data[0]
 
-        loss_history.append(loss.data[0])
+        train_loss_history.append(loss.data[0])
 
         model.zero_grad()
         loss.backward()
@@ -292,10 +293,12 @@ def train():
         correct += pred_answers.eq(
             answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
 
-    print('\nTraining set: Accuracy: {}/{} ({:.0f}%)\n'.format(
-        correct, train_data_size, 100. * correct / train_data_size))
+    accuracy = 100. * correct / train_data_size
 
-    return loss_history, total_loss  # loss per epoch
+    print('\nTraining set: Accuracy: {}/{} ({:.0f}%)\n'.format(
+        correct, train_data_size, accuracy))
+
+    return train_loss_history, accuracy, total_loss  # loss per epoch
 
 def test():
 
@@ -304,6 +307,8 @@ def test():
     print("evaluating trained model ...")
     correct = 0
     test_data_size = len(test_loader.dataset)
+
+    test_loss_history = []
 
     for stories, queries, answers, sl, ql in test_loader:
         stories = Variable(stories.type(torch.LongTensor))
@@ -322,11 +327,18 @@ def test():
 
         output = model(stories, queries, sl, ql)
 
+        loss = criterion(output, answers)
+        test_loss_history.append(loss.data[0])
+
         pred_answers = output.data.max(1)[1]
         correct += pred_answers.eq(answers.data.view_as(pred_answers)).cpu().sum() # calculate how many labels are correct
 
+    accuracy = 100. * correct / test_data_size
+
     print('\nTest set: Accuracy: {}/{} ({:.0f}%)\n'.format(
-        correct, test_data_size, 100. * correct / test_data_size))
+        correct, test_data_size, accuracy))
+
+    return test_loss_history, accuracy
 
 
 ## Load data
@@ -367,11 +379,11 @@ STORY_HIDDEN_SIZE = 100
 QUERY_HIDDEN_SIZE = 100
 N_LAYERS = 1
 BATCH_SIZE = 32
-EPOCHS = 40
+EPOCHS = 10
 VOC_SIZE = vocab_size
-LEARNING_RATE = 0.001
+LEARNING_RATE = 0.001 #0.0001
 
-PLOT_LOSS = False
+PLOT_LOSS = True
 
 ## Create Test & Train-Data
 x, xq, y, xl, xql,= vectorize_stories(train_data, word_idx, story_maxlen, query_maxlen)  # x: story, xq: query, y: answer, xl: story_lengths, xql: query_lengths
@@ -399,21 +411,38 @@ print(model)
 start = time.time()
 print("Training for %d epochs..." % EPOCHS)
 
-l_history = []
+train_loss_history = []
+test_loss_history = []
+
+train_acc_history = []
+test_acc_history = []
 
 for epoch in range(1, EPOCHS + 1):
 
     # Train cycle
-    epoch_history, total_loss = train()
+    train_loss, train_accuracy, total_loss = train()
 
     # Test cycle
-    test()
+    test_loss, test_accuracy = test()
 
     # Add Loss to history
-    l_history = l_history+epoch_history
+    train_loss_history = train_loss_history+train_loss
+    test_loss_history = test_loss_history+test_loss
+
+    # Add Loss to history
+    train_acc_history.append(train_accuracy) # = train_acc_history + [train_accuracy]
+    test_acc_history.append(test_accuracy) # = test_acc_history + test_accuracy
 
 # Plot Loss
 if PLOT_LOSS:
     plt.figure()
-    plt.plot(l_history)
+    plt.hold(True)
+    plt.plot(train_loss_history,'b')
+    plt.plot(test_loss_history,'r')
+    plt.show()
+
+    plt.figure()
+    plt.hold(True)
+    plt.plot(train_acc_history,'b')
+    plt.plot(test_acc_history,'r')
     plt.show()
