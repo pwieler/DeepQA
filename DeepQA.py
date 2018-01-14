@@ -193,23 +193,21 @@ class QAModel(nn.Module):
         self.story_embedding = nn.Embedding(input_size, embedding_size) #Embedding bildet ab von Vokabular (Indize) auf n-dim Raum
 
         self.story_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers,
-                                bidirectional=bidirectional, batch_first=True, dropout=0.5)
+                                bidirectional=bidirectional, batch_first=True, dropout=0.3)
 
         self.query_embedding = nn.Embedding(input_size, embedding_size)
         self.query_rnn = nn.GRU(embedding_size, query_hidden_size, n_layers,
-                                bidirectional=bidirectional, batch_first=True, dropout=0.5)
+                                bidirectional=bidirectional, batch_first=True, dropout=0.3)
 
-        self.fc = nn.Linear(story_hidden_size+query_hidden_size, output_size)
+        # info: if we use the old-forward function fc-layer has input-length: "story_hidden_size+query_hidden_size"
+        self.fc = nn.Linear(story_hidden_size, output_size)
         self.softmax = nn.LogSoftmax()
 
-    def forward(self, story, query, story_lengths, query_lengths):
-        # Note: we run this all at once (over the whole input sequence)
+    # this is the old forward version! below version with question_code performs much better!!
+    def olf_forward(self, story, query, story_lengths, query_lengths):
         # input shape: B x S (input size)
-        # transpose to make S(sequence) x B (batch)
-        #story = story.t()
-        #query = query.t()
 
-        # story hat jetzt Dimension Sequenzlaenge x Batchgroesse --> z.B. 552x32 Woerter
+        # story has dimension batch_size * number of words
         batch_size = story.size(0)
 
         # Create hidden states for RNNs
@@ -217,23 +215,62 @@ class QAModel(nn.Module):
         query_hidden = self._init_hidden(batch_size, self.query_hidden_size)
 
         # Create Story-Embeddings
-        s_e = self.story_embedding(story)   # jedes einzelne Wort wird in das Embedding abgebildet, deshalb hat man nun 552x32
-                                            # Embeddings der Groesse EMBBEDDING_SIZE. --> 552x32xEMBBEDDING_SIZE
+        s_e = self.story_embedding(story)   # encodings have size: batch_size*length_of_sequence*EMBBEDDING_SIZE
 
-        # packed Story-Embeddings into RNN --> unpack
+        # packed Story-Embeddings into RNN
         packed_story = torch.nn.utils.rnn.pack_padded_sequence(s_e, story_lengths.data.cpu().numpy(), batch_first=True)  # pack story
         story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
-        #unpacked_story, unpacked_story_len = torch.nn.utils.rnn.pad_packed_sequence(story_output, batch_first=True)  # unpack story
-
+        # unpacking is not necessary, because we use hidden states of RNN
 
         q_e = self.query_embedding(query)
-        #packed_query = torch.nn.utils.rnn.pack_padded_sequence(q_e, query_lengths.data.cpu().numpy(), batch_first=True)  # pack query
         query_output, query_hidden = self.query_rnn(q_e, query_hidden)
-        #unpacked_query, unpacked_query_len = torch.nn.utils.rnn.pad_packed_sequence(query_output, batch_first=True)  # unpack query
 
         merged = torch.cat([story_hidden[0], query_hidden[0]],1)
         merged = merged.view(batch_size, -1)
         fc_output = self.fc(merged)
+        sm_output = self.softmax(fc_output)
+
+        return sm_output
+
+
+    # new forward-function with question-code
+    # achieves 100% on Task 1!!
+    # --> question-code is like an attention-mechanism!
+    def forward(self, story, query, story_lengths, query_lengths):
+
+        # Calculate Batch-Size
+        batch_size = story.size(0)
+
+        # Make a hidden
+        story_hidden = self._init_hidden(batch_size, self.story_hidden_size)
+        query_hidden = self._init_hidden(batch_size, self.query_hidden_size)
+
+        # Embed query
+        q_e = self.query_embedding(query)
+        # Encode query-sequence with RNN
+        query_output, query_hidden = self.query_rnn(q_e, query_hidden)
+
+        # question_code contains the encoded question!
+        # --> we give this directly into the story_rnn,
+        # so that the story_rnn can focus on the question already
+        # and can forget unnecessary information!
+        question_code = query_hidden[0]
+        question_code = question_code.view(batch_size,1,self.query_hidden_size)
+        question_code = question_code.repeat(1,story.size(1),1)
+
+        # Embed story
+        s_e = self.story_embedding(story)
+
+        # Combine story-embeddings with question_code
+        combined = s_e + question_code
+
+        # put combined tensor into story_rnn --> attention-mechansism through question_code
+        packed_story = torch.nn.utils.rnn.pack_padded_sequence(combined, story_lengths.data.cpu().numpy(), batch_first=True)  # pack story
+        story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
+        # remember: because we use the hidden states of the RNN, we don't have to unpack the tensor!
+
+        # Do softmax on the encoded story tensor!
+        fc_output = self.fc(story_hidden[0])
         sm_output = self.softmax(fc_output)
 
         return sm_output
@@ -262,10 +299,9 @@ def train():
         sl = Variable(sl.type(torch.LongTensor))
         ql = Variable(ql.type(torch.LongTensor))
 
-        # Sort stories by their length
+        # Sort stories by their length (because of packing in the forward step!)
         sl, perm_idx = sl.sort(0, descending=True)
         stories = stories[perm_idx]
-        #ql, perm_idx = ql.sort(0, descending=True) # if we sort query also --> then they do not fit together!
         ql = ql[perm_idx]
         queries = queries[perm_idx]
         answers = answers[perm_idx]
@@ -375,11 +411,11 @@ query_maxlen = max(map(len, (x for _, x, _ in train_data + test_data)))
 
 ## Parameters
 EMBED_HIDDEN_SIZE = 50
-STORY_HIDDEN_SIZE = 100
-QUERY_HIDDEN_SIZE = 100
+STORY_HIDDEN_SIZE = 50
+QUERY_HIDDEN_SIZE = 50
 N_LAYERS = 1
 BATCH_SIZE = 32
-EPOCHS = 10
+EPOCHS = 40
 VOC_SIZE = vocab_size
 LEARNING_RATE = 0.001 #0.0001
 
