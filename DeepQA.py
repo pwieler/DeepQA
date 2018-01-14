@@ -412,7 +412,8 @@ query_maxlen = max(map(len, (x for _, x, _ in train_data + test_data)))
 ## Parameters
 EMBED_HIDDEN_SIZE = 50
 STORY_HIDDEN_SIZE = 50
-QUERY_HIDDEN_SIZE = 50
+QUERY_HIDDEN_SIZE = 50  # note: since we are adding the encoded query to the embedded stories,
+#  QUERY_HIDDEN_SIZE should be equal to EMBED_HIDDEN_SIZE
 N_LAYERS = 1
 BATCH_SIZE = 32
 EPOCHS = 40
