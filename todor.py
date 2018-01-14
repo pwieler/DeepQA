@@ -359,16 +359,16 @@ query_maxlen = max(map(len, (x for _, x, _ in train_data + test_data)))
 
 
 ## Parameters
-EMBED_HIDDEN_SIZE = 50
+EMBED_HIDDEN_SIZE = 10
 STORY_HIDDEN_SIZE = 100
 QUERY_HIDDEN_SIZE = 100
 N_LAYERS = 1
 BATCH_SIZE = 32
 EPOCHS = 40
 VOC_SIZE = vocab_size
-LEARNING_RATE = 0.001
+LEARNING_RATE = 0.0001
 
-PLOT_LOSS = False
+PLOT_LOSS = True
 
 ## Create Test & Train-Data
 x, xq, y, xl, xql,= vectorize_stories(train_data, word_idx, story_maxlen, query_maxlen)  # x: story, xq: query, y: answer, xl: story_lengths, xql: query_lengths
