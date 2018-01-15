@@ -204,7 +204,7 @@ class QAModel(nn.Module):
         self.softmax = nn.LogSoftmax()
 
     # this is the old forward version! below version with question_code performs much better!!
-    def olf_forward(self, story, query, story_lengths, query_lengths):
+    def old_forward(self, story, query, story_lengths, query_lengths):
         # input shape: B x S (input size)
 
         # story has dimension batch_size * number of words
@@ -318,12 +318,13 @@ def train():
         loss.backward()
         optimizer.step()
 
-        if i % 1 == 0:
-            print('[{}] Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.2f}'.format(
-                time_since(start), epoch, i *
-                                          len(stories), len(train_loader.dataset),
-                                          100. * i * len(stories) / len(train_loader.dataset),
-                loss.data[0]))
+        if PRINT_LOSS:
+            if i % 1 == 0:
+                print('[{}] Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.2f}'.format(
+                    time_since(start), epoch, i *
+                                              len(stories), len(train_loader.dataset),
+                                              100. * i * len(stories) / len(train_loader.dataset),
+                    loss.data[0]))
 
         pred_answers = output.data.max(1)[1]
         correct += pred_answers.eq(
@@ -331,7 +332,8 @@ def train():
 
     accuracy = 100. * correct / train_data_size
 
-    print('\nTraining set: Accuracy: {}/{} ({:.0f}%)\n'.format(
+    #if PRINT_LOSS:
+    print('Training set: Accuracy: {}/{} ({:.0f}%)'.format(
         correct, train_data_size, accuracy))
 
     return train_loss_history, accuracy, total_loss  # loss per epoch
@@ -340,7 +342,9 @@ def test():
 
     model.eval()
 
-    print("evaluating trained model ...")
+    if PRINT_LOSS:
+        print("evaluating trained model ...")
+
     correct = 0
     test_data_size = len(test_loader.dataset)
 
@@ -371,7 +375,8 @@ def test():
 
     accuracy = 100. * correct / test_data_size
 
-    print('\nTest set: Accuracy: {}/{} ({:.0f}%)\n'.format(
+    #if PRINT_LOSS:
+    print('Test set: Accuracy: {}/{} ({:.0f}%)'.format(
         correct, test_data_size, accuracy))
 
     return test_loss_history, accuracy
@@ -381,10 +386,12 @@ def test():
 
 data_path = "data/"
 
-challenge = 'tasks_1-20_v1-2/en/qa1_single-supporting-fact_{}.txt'
+challenge = 'tasks_1-20_v1-2/shuffled/qa1_single-supporting-fact_{}.txt'
 #challenge = 'tasks_1-20_v1-2/en/qa2_two-supporting-facts_{}.txt'
 #challenge = 'tasks_1-20_v1-2/en/qa3_three-supporting-facts_{}.txt'
 #challenge = 'tasks_1-20_v1-2/en/qa6_yes-no-questions_{}.txt'
+
+print(challenge)
 
 train_data = get_stories(open(data_path + challenge.format('train'), 'r'))
 test_data = get_stories(open(data_path + challenge.format('test'), 'r'))
@@ -402,8 +409,6 @@ vocab_size = len(vocab) + 1
 #Creates Dictionary
 word_idx = dict((c, i + 1) for i, c in enumerate(vocab))
 
-print(word_idx)
-
 #Max Length of Story and Query
 story_maxlen = max(map(len, (x for x, _, _ in train_data + test_data)))
 query_maxlen = max(map(len, (x for _, x, _ in train_data + test_data)))
@@ -420,7 +425,12 @@ EPOCHS = 40
 VOC_SIZE = vocab_size
 LEARNING_RATE = 0.001 #0.0001
 
-PLOT_LOSS = True
+print('\nSettings:\nEMBED_HIDDEN_SIZE: %d\nSTORY_HIDDEN_SIZE: %d\nQUERY_HIDDEN_SIZE: %d'
+      '\nN_LAYERS: %d\nBATCH_SIZE: %d\nEPOCHS: %d\nVOC_SIZE: %d\nLEARNING_RATE: %f\n\n'
+      %(EMBED_HIDDEN_SIZE,STORY_HIDDEN_SIZE,QUERY_HIDDEN_SIZE,N_LAYERS,BATCH_SIZE,EPOCHS,VOC_SIZE,LEARNING_RATE))
+
+PLOT_LOSS = False
+PRINT_LOSS = True
 
 ## Create Test & Train-Data
 x, xq, y, xl, xql,= vectorize_stories(train_data, word_idx, story_maxlen, query_maxlen)  # x: story, xq: query, y: answer, xl: story_lengths, xql: query_lengths
@@ -446,7 +456,8 @@ print(model)
 ## Start training
 
 start = time.time()
-print("Training for %d epochs..." % EPOCHS)
+if PRINT_LOSS:
+    print("Training for %d epochs..." % EPOCHS)
 
 train_loss_history = []
 test_loss_history = []
@@ -456,6 +467,7 @@ test_acc_history = []
 
 for epoch in range(1, EPOCHS + 1):
 
+    print("Epoche: %d" %epoch)
     # Train cycle
     train_loss, train_accuracy, total_loss = train()
 
