@@ -160,7 +160,7 @@ def vectorize_stories(data, word_idx, story_maxlen, query_maxlen):
             xf.append(x)
 
         xfl = [len(l) for l in xf]
-        facts_lengths.append(xfl)
+        facts_lengths.append(np.array(xfl))
         xf = pad_sequences(xf, maxlen=10, padding='post')
 
         xq = [word_idx[w] for w in query]
@@ -175,7 +175,7 @@ def vectorize_stories(data, word_idx, story_maxlen, query_maxlen):
     xsl = [len(l) for l in xs]  #contains length of stories
     xqsl = [len(l) for l in xqs] # contains length of queries
 
-    return pad_sequences(xs, maxlen=story_maxlen, padding='post'), pad_sequences(xqs, maxlen=query_maxlen, padding='post'), np.array(ys), np.array(xsl), np.array(xqsl), facts_lengths # info pad_sequence wurde in rnn.py reinkopiert
+    return pad_sequences(xs, maxlen=story_maxlen, padding='post'), pad_sequences(xqs, maxlen=query_maxlen, padding='post'), np.array(ys), np.array(xsl), np.array(xqsl), pad_sequences(facts_lengths, maxlen=story_maxlen, padding='post') # info pad_sequence wurde in rnn.py reinkopiert
 
 
 class QADataset(Dataset):
@@ -209,6 +209,9 @@ class QAModel(nn.Module):
         self.story_embedding = nn.Embedding(input_size, embedding_size) #Embedding bildet ab von Vokabular (Indize) auf n-dim Raum
 
         self.story_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers,
+                                bidirectional=bidirectional, batch_first=True, dropout=0.3)
+
+        self.fact_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers,
                                 bidirectional=bidirectional, batch_first=True, dropout=0.3)
 
         self.query_embedding = nn.Embedding(input_size, embedding_size)
@@ -252,7 +255,7 @@ class QAModel(nn.Module):
     # new forward-function with question-code
     # achieves 100% on Task 1!!
     # --> question-code is like an attention-mechanism!
-    def forward(self, story, query, story_lengths, query_lengths):
+    def forward_question_code(self, story, query, story_lengths, query_lengths):
 
         # Calculate Batch-Size
         batch_size = story.size(0)
@@ -291,6 +294,66 @@ class QAModel(nn.Module):
 
         return sm_output
 
+    def forward(self, story, query, story_lengths, query_lengths, fact_lengths):
+
+        #story: 32x20x10
+        #query: 32x5
+        #story_lengths: 32
+        #query_lengths: 32
+        #fact_lengths: 32x20
+
+        #a = story[31]
+
+        # Calculate Batch-Size
+        batch_size = story.size(0)
+        story_size = story.size(1)
+
+        # Make a hidden
+        fact_hidden = self._init_hidden(batch_size*story_size, self.story_hidden_size)
+        story_hidden = self._init_hidden(batch_size, self.story_hidden_size)
+        query_hidden = self._init_hidden(batch_size, self.query_hidden_size)
+
+        # Embed query
+        q_e = self.query_embedding(query)
+        # Encode query-sequence with RNN
+        query_output, query_hidden = self.query_rnn(q_e, query_hidden)
+
+        # question_code contains the encoded question!
+        # --> we give this directly into the story_rnn,
+        # so that the story_rnn can focus on the question already
+        # and can forget unnecessary information!
+        question_code = query_hidden[0]
+        question_code = question_code.view(batch_size,1,self.query_hidden_size)
+        question_code = question_code.repeat(1,story.size(1),1)
+
+        # Embed story
+        s_e = self.story_embedding(story.view(batch_size,story_size*10))
+        s_e = s_e.view(batch_size,story_size,10,-1)
+
+        s_e = s_e.view(batch_size*story_size,10,-1)
+
+        #s_e.view(32*20,10,-1)
+
+        #packing = torch.nn.utils.rnn.pack_padded_sequence(s_e, story_lengths.data.cpu().numpy(), batch_first=True)  # pack story
+
+        story_output, fact_hidden = self.fact_rnn(s_e.view(batch_size*story_size,10,-1), fact_hidden)
+
+        fact_encodings = fact_hidden.view(batch_size, story_size, -1)
+
+        # Combine story-embeddings with question_code
+        combined = fact_encodings + question_code
+
+        # put combined tensor into story_rnn --> attention-mechansism through question_code
+        packed_story = torch.nn.utils.rnn.pack_padded_sequence(combined, story_lengths.data.cpu().numpy(), batch_first=True)  # pack story
+        story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
+        # remember: because we use the hidden states of the RNN, we don't have to unpack the tensor!
+
+        # Do softmax on the encoded story tensor!
+        fc_output = self.fc(story_hidden[0])
+        sm_output = self.softmax(fc_output)
+
+        return sm_output
+
     def _init_hidden(self, batch_size, hidden_size):
         hidden = torch.zeros(self.n_layers * self.n_directions,
                              batch_size, hidden_size)
@@ -307,22 +370,24 @@ def train():
 
     model.train()
 
-    for i, (stories, queries, answers, sl, ql) in enumerate(train_loader, 1):
+    for i, (stories, queries, answers, sl, ql, fl) in enumerate(train_loader, 1):
 
         stories = Variable(stories.type(torch.LongTensor))
         queries = Variable(queries.type(torch.LongTensor))
         answers = Variable(answers.type(torch.LongTensor))
         sl = Variable(sl.type(torch.LongTensor))
         ql = Variable(ql.type(torch.LongTensor))
+        fl = Variable(fl.type(torch.LongTensor))
 
         # Sort stories by their length (because of packing in the forward step!)
         sl, perm_idx = sl.sort(0, descending=True)
         stories = stories[perm_idx]
         ql = ql[perm_idx]
+        fl = fl[perm_idx]
         queries = queries[perm_idx]
         answers = answers[perm_idx]
 
-        output = model(stories, queries, sl, ql)
+        output = model(stories, queries, sl, ql, fl)
 
         loss = criterion(output, answers)
 
@@ -366,22 +431,24 @@ def test():
 
     test_loss_history = []
 
-    for stories, queries, answers, sl, ql in test_loader:
+    for stories, queries, answers, sl, ql, fl in test_loader:
         stories = Variable(stories.type(torch.LongTensor))
         queries = Variable(queries.type(torch.LongTensor))
         answers = Variable(answers.type(torch.LongTensor))
         sl = Variable(sl.type(torch.LongTensor))
         ql = Variable(ql.type(torch.LongTensor))
+        fl = Variable(fl.type(torch.LongTensor))
 
         # Sort stories by their length
         sl, perm_idx = sl.sort(0, descending=True)
         stories = stories[perm_idx]
         #ql, perm_idx = ql.sort(0, descending=True) # if we sort query also --> then they do not fit together!
+        fl = fl[perm_idx]
         ql = ql[perm_idx]
         queries = queries[perm_idx]
         answers = answers[perm_idx]
 
-        output = model(stories, queries, sl, ql)
+        output = model(stories, queries, sl, ql, fl)
 
         loss = criterion(output, answers)
         test_loss_history.append(loss.data[0])
@@ -438,7 +505,7 @@ QUERY_HIDDEN_SIZE = 50  # note: since we are adding the encoded query to the emb
 #  QUERY_HIDDEN_SIZE should be equal to EMBED_HIDDEN_SIZE
 N_LAYERS = 1
 BATCH_SIZE = 32
-EPOCHS = 40
+EPOCHS = 100
 VOC_SIZE = vocab_size
 LEARNING_RATE = 0.001 #0.0001
 
@@ -446,7 +513,7 @@ print('\nSettings:\nEMBED_HIDDEN_SIZE: %d\nSTORY_HIDDEN_SIZE: %d\nQUERY_HIDDEN_S
       '\nN_LAYERS: %d\nBATCH_SIZE: %d\nEPOCHS: %d\nVOC_SIZE: %d\nLEARNING_RATE: %f\n\n'
       %(EMBED_HIDDEN_SIZE,STORY_HIDDEN_SIZE,QUERY_HIDDEN_SIZE,N_LAYERS,BATCH_SIZE,EPOCHS,VOC_SIZE,LEARNING_RATE))
 
-PLOT_LOSS = False
+PLOT_LOSS = True
 PRINT_LOSS = True
 
 ## Create Test & Train-Data
