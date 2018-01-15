@@ -128,9 +128,15 @@ def get_stories(f, only_supporting=False, max_length=None):
     any stories longer than max_length tokens will be discarded.
     '''
     data = parse_stories(f.readlines(), only_supporting=only_supporting)
-    flatten = lambda data: reduce(lambda x, y: x + y, data)
-    data = [(flatten(story), q, answer) for story, q, answer in data if not max_length or len(flatten(story)) < max_length]
-    return data
+    #flatten = lambda data: reduce(lambda x, y: x + y, data)
+    for story, q, answer in data:
+        data1 = [(story, q, answer) for story, q, answer in data if not max_length or len(story) <= max_length]
+        data2 = [(story[len(story)-max_length:len(story)], q, answer) for story, q, answer in data if not max_length or len(story) > max_length]
+        #if not max_length or len(story) <= max_length:
+        #    data.append((story, q, answer))
+        #else:
+        #    data.append((story[len(story)-max_length:len(story)], q, answer))
+    return data1+data2
 
 
 
@@ -146,35 +152,45 @@ def vectorize_stories(data, word_idx, story_maxlen, query_maxlen):
     xs = []
     xqs = []
     ys = []
-    for story, query, answer in data:
-        x = [word_idx[w] for w in story]
+    facts_lengths = []
+    for stories, query, answer in data:
+        xf = []
+        for story in stories:
+            x = [word_idx[w] for w in story]
+            xf.append(x)
+
+        xfl = [len(l) for l in xf]
+        facts_lengths.append(xfl)
+        xf = pad_sequences(xf, maxlen=10, padding='post')
+
         xq = [word_idx[w] for w in query]
         # let's not forget that index 0 is reserved
         #y = np.zeros(len(word_idx) + 1)
         #y[word_idx[answer]] = 1
         #no one-hot-encoding for answer anymore!!
         y = word_idx[answer]
-        xs.append(x)
+        xs.append(xf)
         xqs.append(xq)
         ys.append(y)
     xsl = [len(l) for l in xs]  #contains length of stories
     xqsl = [len(l) for l in xqs] # contains length of queries
 
-    return pad_sequences(xs, maxlen=story_maxlen, padding='post'), pad_sequences(xqs, maxlen=query_maxlen, padding='post'), np.array(ys), np.array(xsl), np.array(xqsl) # info pad_sequence wurde in rnn.py reinkopiert
+    return pad_sequences(xs, maxlen=story_maxlen, padding='post'), pad_sequences(xqs, maxlen=query_maxlen, padding='post'), np.array(ys), np.array(xsl), np.array(xqsl), facts_lengths # info pad_sequence wurde in rnn.py reinkopiert
 
 
 class QADataset(Dataset):
 
-    def __init__(self, story, query, answer, story_lengths, query_lengths):
+    def __init__(self, story, query, answer, story_lengths, query_lengths, facts_lengths):
         self.story = story
         self.query = query
         self.answer = answer
         self.story_lengths = story_lengths
         self.query_lengths = query_lengths
+        self.facts_lengths = facts_lengths
         self.len = len(story)
 
     def __getitem__(self, index):
-        return self.story[index], self.query[index], self.answer[index], self.story_lengths[index], self.query_lengths[index]
+        return self.story[index], self.query[index], self.answer[index], self.story_lengths[index], self.query_lengths[index], self.facts_lengths[index]
 
     def __len__(self):
         return self.len
@@ -386,21 +402,22 @@ def test():
 
 data_path = "data/"
 
-challenge = 'tasks_1-20_v1-2/shuffled/qa1_single-supporting-fact_{}.txt'
-#challenge = 'tasks_1-20_v1-2/en/qa2_two-supporting-facts_{}.txt'
+#challenge = 'tasks_1-20_v1-2/en/qa1_single-supporting-fact_{}.txt'
+challenge = 'tasks_1-20_v1-2/en/qa2_two-supporting-facts_{}.txt'
 #challenge = 'tasks_1-20_v1-2/en/qa3_three-supporting-facts_{}.txt'
 #challenge = 'tasks_1-20_v1-2/en/qa6_yes-no-questions_{}.txt'
 
 print(challenge)
 
-train_data = get_stories(open(data_path + challenge.format('train'), 'r'))
-test_data = get_stories(open(data_path + challenge.format('test'), 'r'))
+train_data = get_stories(open(data_path + challenge.format('train'), 'r'), max_length=20)
+test_data = get_stories(open(data_path + challenge.format('test'), 'r'), max_length=20)
 
 ## Preprocess data
 
 vocab = set()
+flatten = lambda data: reduce(lambda x, y: x + y, data)
 for story, q, answer in train_data + test_data:
-    vocab |= set(story + q + [answer])
+    vocab |= set(flatten(story) + q + [answer])
 vocab = sorted(vocab)
 
 # Reserve 0 for masking via pad_sequences
@@ -433,13 +450,13 @@ PLOT_LOSS = False
 PRINT_LOSS = True
 
 ## Create Test & Train-Data
-x, xq, y, xl, xql,= vectorize_stories(train_data, word_idx, story_maxlen, query_maxlen)  # x: story, xq: query, y: answer, xl: story_lengths, xql: query_lengths
-tx, txq, ty, txl, txql = vectorize_stories(test_data, word_idx, story_maxlen, query_maxlen) # same naming but for test_data
+x, xq, y, xl, xql, facts_lengths= vectorize_stories(train_data, word_idx, story_maxlen, query_maxlen)  # x: story, xq: query, y: answer, xl: story_lengths, xql: query_lengths
+tx, txq, ty, txl, txql, t_facts_lengths = vectorize_stories(test_data, word_idx, story_maxlen, query_maxlen) # same naming but for test_data
 
-train_dataset = QADataset(x,xq,y,xl,xql)
+train_dataset = QADataset(x,xq,y,xl,xql,facts_lengths)
 train_loader = DataLoader(dataset=train_dataset,batch_size=BATCH_SIZE, shuffle=True)
 
-test_dataset = QADataset(tx,txq,ty,txl,txql)
+test_dataset = QADataset(tx,txq,ty,txl,txql,t_facts_lengths)
 test_loader = DataLoader(dataset=test_dataset,batch_size=BATCH_SIZE, shuffle=True)
 
 
