@@ -148,7 +148,7 @@ def tokenize(sent):
     '''
     return [x.strip() for x in re.split('(\W+)?', sent) if x.strip()]
 
-def vectorize_stories(data, word_idx, story_maxlen, query_maxlen):
+def vectorize_stories(data, word_idx, story_maxlen, query_maxlen, fact_maxlen):
     xs = []
     xqs = []
     ys = []
@@ -161,7 +161,7 @@ def vectorize_stories(data, word_idx, story_maxlen, query_maxlen):
 
         xfl = [len(l) for l in xf]
         facts_lengths.append(np.array(xfl))
-        xf = pad_sequences(xf, maxlen=10, padding='post')
+        xf = pad_sequences(xf, maxlen=fact_maxlen, padding='post')
 
         xq = [word_idx[w] for w in query]
         # let's not forget that index 0 is reserved
@@ -296,13 +296,11 @@ class QAModel(nn.Module):
 
     def forward(self, story, query, story_lengths, query_lengths, fact_lengths):
 
-        #story: 32x20x10
+        #story: 32x20x7
         #query: 32x5
         #story_lengths: 32
         #query_lengths: 32
-        #fact_lengths: 32x20
-
-        #a = story[31]
+        #fact_lengths: 32x20fact_maxlen
 
         # Calculate Batch-Size
         batch_size = story.size(0)
@@ -324,26 +322,23 @@ class QAModel(nn.Module):
         # and can forget unnecessary information!
         question_code = query_hidden[0]
         question_code = question_code.view(batch_size,1,self.query_hidden_size)
-        question_code = question_code.repeat(1,story.size(1),1)
+        question_code_words = question_code.view(batch_size,1,1,self.query_hidden_size).repeat(1, story.size(1), fact_maxlen, 1)
+        question_code_facts = question_code.repeat(1,story.size(1),1)
 
         # Embed story
-        s_e = self.story_embedding(story.view(batch_size,story_size*10))
-        s_e = s_e.view(batch_size,story_size,10,-1)
+        s_e = self.story_embedding(story.view(batch_size,story_size*fact_maxlen))
+        s_e = s_e.view(batch_size,story_size,fact_maxlen,-1) # 32x20x7x50
 
-        s_e = s_e.view(batch_size*story_size,10,-1)
+        s_e = s_e + question_code_words
 
-        #s_e.view(32*20,10,-1)
+        fact_output, fact_hidden = self.fact_rnn(s_e.view(batch_size*story_size,fact_maxlen,-1), fact_hidden)
 
-        #packing = torch.nn.utils.rnn.pack_padded_sequence(s_e, story_lengths.data.cpu().numpy(), batch_first=True)  # pack story
-
-        story_output, fact_hidden = self.fact_rnn(s_e.view(batch_size*story_size,10,-1), fact_hidden)
-
-        fact_encodings = fact_hidden.view(batch_size, story_size, -1)
+        fact_encodings = fact_hidden.view(batch_size, story_size, -1) # 32x20x50
 
         # Combine story-embeddings with question_code
-        combined = fact_encodings + question_code
+        combined = fact_encodings + question_code_facts
 
-        # put combined tensor into story_rnn --> attention-mechansism through question_code
+        # put combined tensor into story_rnn --> attention-mechanism through question_code
         packed_story = torch.nn.utils.rnn.pack_padded_sequence(combined, story_lengths.data.cpu().numpy(), batch_first=True)  # pack story
         story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
         # remember: because we use the hidden states of the RNN, we don't have to unpack the tensor!
@@ -496,7 +491,7 @@ word_idx = dict((c, i + 1) for i, c in enumerate(vocab))
 #Max Length of Story and Query
 story_maxlen = max(map(len, (x for x, _, _ in train_data + test_data)))
 query_maxlen = max(map(len, (x for _, x, _ in train_data + test_data)))
-
+fact_maxlen = 7
 
 ## Parameters
 EMBED_HIDDEN_SIZE = 50
@@ -517,8 +512,8 @@ PLOT_LOSS = True
 PRINT_LOSS = True
 
 ## Create Test & Train-Data
-x, xq, y, xl, xql, facts_lengths= vectorize_stories(train_data, word_idx, story_maxlen, query_maxlen)  # x: story, xq: query, y: answer, xl: story_lengths, xql: query_lengths
-tx, txq, ty, txl, txql, t_facts_lengths = vectorize_stories(test_data, word_idx, story_maxlen, query_maxlen) # same naming but for test_data
+x, xq, y, xl, xql, facts_lengths = vectorize_stories(train_data, word_idx, story_maxlen, query_maxlen, fact_maxlen)  # x: story, xq: query, y: answer, xl: story_lengths, xql: query_lengths
+tx, txq, ty, txl, txql, t_facts_lengths = vectorize_stories(test_data, word_idx, story_maxlen, query_maxlen, fact_maxlen) # same naming but for test_data
 
 train_dataset = QADataset(x,xq,y,xl,xql,facts_lengths)
 train_loader = DataLoader(dataset=train_dataset,batch_size=BATCH_SIZE, shuffle=True)
