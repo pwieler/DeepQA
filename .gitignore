@@ -1,2 +1,3 @@
 # Ignoring PyCharm (/Jetbrains) project files
 *.idea
+/data
