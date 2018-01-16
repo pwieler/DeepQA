@@ -1,19 +1,59 @@
 import torch
-print("PyTorch Version: " + torch.__version__)
 import torch.nn as nn
 import torch.autograd as autograd
 import torch.optim as optim
 import torch.optim.lr_scheduler
 import torch.nn.functional as functional
-import math
+from random import randint
+from typing import List
 import re
 import os
 import pickle
+import bAbIData as bd
+import matplotlib.pyplot as plt
 
-from random import randint
+print("PyTorch Version: " + torch.__version__)
 
-vocabulary = dict()
-word_context = []
+
+class W2VInstance:
+    def __init__(self, word, context):
+        self.word = word
+        self.context = context
+
+    def get_random_context(self):
+        return self.context[randint(0, len(self.context) - 1)]
+
+    @staticmethod
+    def instances_from_file(path, context_l=1, context_r=1):
+        instances = []
+
+        with open(path, 'r') as f:
+            for line in f.readlines():
+                instances += W2VInstance.instances_from_line(line, context_l, context_r)
+
+        return instances
+
+    @staticmethod
+    def instances_from_line(line, context_l=1, context_r=1):
+        instances = []
+        words = re.split('(\W)', line)
+
+        words = [word for word in words if word not in ["", " ", "\n", "\r"] and not word.isnumeric()]
+
+        for i in range(len(words)):
+            word = words[i]
+            context = []
+
+            for j in range(max(0, i - context_l), min(len(words), i + context_r)):
+                if j is not i:
+                    context += words[j]
+
+            if len(context) is 0:
+                continue
+
+            instances.append(W2VInstance(word, context))
+
+        return instances
 
 
 class W2VSkipGramEmbedding(nn.Module):
@@ -24,12 +64,16 @@ class W2VSkipGramEmbedding(nn.Module):
         Hand over an embedding which will be trained as first half of a word2vec skip gram network.
         (One-Hot-Input->embedding matrix->hidden layer (feature vector)->softmax vs target label)
 
-        :param embeddings: Embeddings is basically a linear layer from the One-Hot-Input of dimension |Vocabulary|=VxN=|Features of feature vector|. embeddings.weight.data is the underlying matrix corresponding to the linear layer.
+        :param embeddings: Embeddings is basically a linear layer from the One-Hot-Input of dimension
+        |Vocabulary|=VxN=|Features of feature vector|. embeddings.weight.data is the underlying matrix corresponding
+        to the linear layer.
         """
         super(W2VSkipGramEmbedding, self).__init__()
 
         # Linear Layer VxN
         self.embeddings = embeddings
+
+        self.activation = nn.Hardtanh()
 
         # Linear Layer NxV
         self.fc = nn.Linear(self.embeddings.embedding_dim, self.embeddings.num_embeddings)
@@ -43,10 +87,10 @@ class W2VSkipGramEmbedding(nn.Module):
         """
 
         # Get the feature vector
-        hidden_embedding = self.embeddings(input)
+        hidden_embedding = self.embeddings(input).view(1, -1)
 
         # Calculate values for context probabilities from feature vector
-        out = self.fc(hidden_embedding)
+        out = self.fc(self.activation(hidden_embedding))
 
         # Convert output to probabilities with logarithmic softmax.
         out = functional.log_softmax(out)
@@ -54,138 +98,92 @@ class W2VSkipGramEmbedding(nn.Module):
         return out
 
 
-def word_to_index(word):
-    return vocabulary[word]
-
-
-def choose_target_randomly(context_idxs):
-    ids = [word_id for word_id in context_idxs if word_id is not None]
-
-    if len(ids) == 1:
-        return ids[0]
-
-    return ids[randint(0, len(ids) - 1)]
-
-
-def train(network: W2VSkipGramEmbedding, scheduler, number_epochs=1):
+def train(network: W2VSkipGramEmbedding, instances: List[W2VInstance], voc: bd.Vocabulary, number_epochs=1,
+          plot_loss=False):
     loss_calc = nn.NLLLoss()
 
-    print("Size of vocabulary: " + str(len(vocabulary)))
-    print("Size of context data: " + str(len(word_context)))
+    optimizer = optim.SGD(network.parameters(), lr=0.001)
+
+    plt.ion()
+
+    loss_history = []
 
     for epoch in range(number_epochs):
         epoch_loss = 0
 
-        for (word_idx, context_idxs) in word_context:
+        for instance in instances:
             # Using a random context word for training
-            network_input = autograd.Variable(torch.LongTensor([word_idx]))
-            network_target = autograd.Variable(torch.LongTensor([choose_target_randomly(context_idxs)]))
+            input_id = voc.word_to_id(instance.word)
+            target_id = voc.word_to_id(instance.get_random_context())
 
-
-            network.zero_grad()
+            network_input = autograd.Variable(torch.LongTensor([input_id]))
+            network_target = autograd.Variable(torch.LongTensor([target_id]))
 
             context_probabilities = network.forward(network_input)
 
             loss = loss_calc.forward(context_probabilities, network_target)
 
+            optimizer.zero_grad()
+
             loss.backward()
 
-            scheduler.step()
+            optimizer.step()
 
-            epoch_loss += loss.data
+            epoch_loss += loss.data[0]
 
-        print("Loss of Epoch " + str(epoch) + ": " + str(epoch_loss[0]/len(word_context)))
+        loss_instance = epoch_loss / len(instances)
+        loss_history.append(loss_instance)
 
-
-def add_to_vocabulary(text: str):
-    word_set = set()
-
-    for word_blob in text.split():
-        alnum_word = "".join([c for c in word_blob if c.isalpha()])
-        symbols = "".join([c for c in word_blob if not c.isalnum()])
-
-        if len(alnum_word) > 0:
-            if alnum_word not in word_set: word_set.add(alnum_word)
-
-        if len(symbols) > 0:
-            if symbols not in word_set: word_set.add(symbols)
-
-    for word in word_set:
-        if word not in vocabulary: vocabulary[word] = len(vocabulary)
-
-
-def word_to_id(word):
-    # This is a trick entry for words that are non existent.
-    if word is None or word not in vocabulary:
-        return len(vocabulary)
-
-    return vocabulary[word]
-
-
-def add_to_data(text: str):
-    words = re.split('(\W)', text)
-
-    words = [word for word in words if word not in ["", " ", "\n", "\r"] and not word.isnumeric()]
-
-    for i in range(len(words)):
-        w2p = words[i - 2] if i - 2 > 0 else None
-        w1p = words[i - 1] if i - 1 > 0 else None
-
-        w1a = words[i + 1] if i + 1 < len(words) else None
-        w2a = words[i + 2] if i + 2 < len(words) else None
-
-        word_id = word_to_id(words[i])
-        context = (word_to_id(w2p), word_to_id(w1p), word_to_id(w1a), word_to_id(w2a))
-
-        if context == (word_to_id(None), word_to_id(None), word_to_id(None), word_to_id(None)):
-            continue
-
-        # Only add entry if word is in vocabulary
-        if word_id != len(vocabulary):
-            word_context.append((word_id, context))
-
-
-def file_to_vocabulary(path="data/qa2_two-supporting-facts_train.txt"):
-    with open(path, 'r') as f:
-        for line in f.readlines():
-            add_to_vocabulary(line)
-
-
-def file_to_data(path="data/qa2_two-supporting-facts_train.txt"):
-    with open(path, 'r') as f:
-        for line in f.readlines():
-            add_to_data(line)
+        print("Loss per instance of Epoch " + str(epoch) + ": " + str(loss_instance))
+        plt.plot(loss_history)
+        plt.pause(0.001)
 
 
 def main():
+    load_predefined = False
+    learning_file = "data/tasks_1-20_v1-2/en/qa1_single-supporting-fact_test.txt"
 
+    if load_predefined:
+        voc = bd.Vocabulary()
 
-    file_to_vocabulary()
+        if os.path.isfile("embedding.tensor") and os.path.isfile("vocabulary.pickle"):
+            voc.embedding.weight.data = torch.load("embedding.tensor")
+            voc.voc_dict = pickle.load(open("vocabulary.pickle", "r"))
+            print("Loaded previously defined vocabulary and embedding.")
+        else:
+            print("could not find  files to load.")
+            exit(1)
+    else:
+        voc = bd.Vocabulary(learning_file)
+        voc.initialize_embedding(em_dim=2)
 
-    file_to_data()
+    w2v_instances = W2VInstance.instances_from_file(learning_file)
 
-    # We want to represent a vocabulary with v one hot vectors by a feature vector with n features.
-    # Add +1 to each to represent words that are not in the vocabulary.
-    v = len(vocabulary) + 1
-    n = 2*math.log2(len(vocabulary)) + 10
+    print("Number of training instances: " + str(len(w2v_instances)))
 
-    our_custom_embedding = nn.Embedding(v, int(n))
+    w2v_net = W2VSkipGramEmbedding(voc.embedding)
 
-    if(os.path.isfile("embedding.tensor")):
-        our_custom_embedding.weight.data = torch.load("embedding.tensor")
+    train(w2v_net, w2v_instances[:3000], voc, number_epochs=50, plot_loss=True)
 
-    w2v_net = W2VSkipGramEmbedding(our_custom_embedding)
+    torch.save(voc.embedding.weight.data, "embedding.tensor")
 
-    optimizer = optim.SGD(w2v_net.parameters(), lr=0.1)
+    pickle.dump(voc.voc_dict, open("vocabulary.pickle", "wb"))
 
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 30, gamma=0.5)
+    voc.embedding = w2v_net.embeddings
 
+    cos = nn.CosineSimilarity(dim=1, eps=1e-6)
 
-    train(w2v_net, scheduler, number_epochs=50)
+    vocs = list(voc.voc_dict.keys())
+    for word in vocs[:50]:
+        word_em = voc.word_to_tensor(word)
+        distances = [(other, cos(voc.word_to_tensor(word), voc.word_to_tensor(other)).data[0]) for other in
+                     voc.voc_dict.keys()]
 
-    torch.save(our_custom_embedding.weight.data, "embedding.tensor")
+        distances = [(tup[0], round(tup[1], 2)) for tup in distances]
+        distances = sorted(distances, key=lambda tup: tup[1], reverse=True)
 
-    pickle.dump(vocabulary, open("vocabulary.pickle", "wb"))
+        print(word + " : " + str(distances))
+
 
 if __name__ == '__main__':
     main()
