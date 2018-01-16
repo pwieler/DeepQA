@@ -193,11 +193,6 @@ if __name__ == "__main__":
 
     voc.sort_ids()
 
-    print("Vocabulary used for translating words to ids: ")
-    print(str(voc) + "\n")
-
-    print(train_instances[0].__repr__())
-
     for inst in train_instances:
         inst.vectorize(voc)
 
