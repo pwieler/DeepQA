@@ -10,7 +10,7 @@ import numpy as np
 
 
 class Vocabulary:
-    def __init__(self, file=None, vocabulary_dict=None, embedding: nn.Embedding = None):
+    def __init__(self, file=None, vocabulary_dict=None, embedding = None):
         self.voc_dict = vocabulary_dict if vocabulary_dict is not None else dict()
         self.embedding = embedding
 
@@ -38,11 +38,11 @@ class Vocabulary:
 
         return self.embedding(autograd.Variable(torch.LongTensor([self.word_to_id(word)])))
 
-    def extend_with_word(self, word: str):
+    def extend_with_word(self, word):
         if word not in self.voc_dict:
             self.voc_dict[word] = len(self.voc_dict)
 
-    def extend_with_text(self, text: str):
+    def extend_with_text(self, text):
         word_set = set()
 
         for word_blob in text.split():
@@ -104,7 +104,7 @@ class BAbIInstance:
     def hint_sentences(self):
         return self.indexed_story[self.hints[0] - 1] + self.indexed_story[self.hints[1] - 1]
 
-    def vectorize(self, voc: Vocabulary):
+    def vectorize(self, voc):
         for s in self.indexed_story:
             s[1] = voc.words_to_ids(s[1])
 
@@ -153,7 +153,7 @@ class BAbIInstance:
         return training_instances
 
     @staticmethod
-    def _indexed_lines(lines: List[str]):
+    def _indexed_lines(lines):
         """
         Tokenize the stories and their information for easy access.
 
@@ -191,7 +191,7 @@ class BAbIInstance:
 
 
 class BAbiDataset(Dataset):
-    def __init__(self, instances: List[BAbIInstance], pad_sequences=True):
+    def __init__(self, instances, pad_sequences=True):
         self.instances = instances
         self.pad_sequences = pad_sequences
         self.maxlen_story = max([len(inst.flat_story()) for inst in instances])

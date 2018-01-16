@@ -14,8 +14,6 @@ import torch.optim.lr_scheduler
 
 from preprocessing import bAbIData as bd
 
-print("PyTorch Version: " + torch.__version__)
-
 
 class W2VInstance:
     def __init__(self, word, context):
@@ -61,7 +59,7 @@ class W2VInstance:
 class W2VSkipGramEmbedding(nn.Module):
     """This Module is used for training a PyTorch nn.embedding with a word2vec skip gram approach."""
 
-    def __init__(self, embeddings: nn.Embedding):
+    def __init__(self, embeddings):
         """
         Hand over an embedding which will be trained as first half of a word2vec skip gram network.
         (One-Hot-Input->embedding matrix->hidden layer (feature vector)->softmax vs target label)
@@ -98,7 +96,7 @@ class W2VSkipGramEmbedding(nn.Module):
         return out
 
 
-def train(network: W2VSkipGramEmbedding, instances: List[W2VInstance], voc: bd.Vocabulary, number_epochs=1,
+def train(network, instances, voc, number_epochs=1,
           plot_loss=False):
     loss_calc = nn.NLLLoss()
 
