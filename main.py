@@ -139,9 +139,9 @@ class GridSearch():
         return self.params
 
 
-def log(task, train_loss, test_loss, params, train_accuracy, test_accuracy, params_file):
-    date = str(time.strftime("%H:%M:%S"))
-    fname = "results/" + date.replace(":", "_") + params + "_task_" + str(task) + "/"
+def log(task, train_loss, test_loss, params, train_accuracy, test_accuracy, params_file, model):
+    date = str(time.strftime("%Y:%m:%d:%H:%M:%S"))
+    fname = "results/" + date.replace(":", "_") + "_" + params + "_task_" + str(task) + "/"
     try:
         os.stat(fname)
     except:
@@ -165,16 +165,21 @@ def log(task, train_loss, test_loss, params, train_accuracy, test_accuracy, para
     plt.legend()
     plt.savefig(fname + "acc_history.png")
     plt.close("all")
-    with open(fname+ "params.txt", "w") as text_file:
+    with open(fname + "params.txt", "w") as text_file:
         text_file.write(params_file)
+    torch.save(model.state_dict(), fname + "trained_model.pth")
+
 
 if __name__ == "__main__":
 
     BABI_TASK = 1
 
+    PREVIOUSLY_TRAINED_MODEL = None
+    ONLY_EVALUATE = False
+
     ## Parameters
     EMBED_HIDDEN_SIZE = 50
-    STORY_HIDDEN_SIZE = 50
+    STORY_HIDDEN_SIZE = 100
     QUERY_HIDDEN_SIZE = 50  # note: since we are adding the encoded query to the embedded stories,
     #  QUERY_HIDDEN_SIZE should be equal to EMBED_HIDDEN_SIZE
 
@@ -185,7 +190,7 @@ if __name__ == "__main__":
 
     GRID_SEARCH = False
     PLOT_LOSS = True
-    PRINT_LOSS = True
+    PRINT_LOSS = False
 
     ## Load data
     voc = bd.Vocabulary()
@@ -237,9 +242,10 @@ if __name__ == "__main__":
     test_loader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
     # If GRID_SEARCH is active generate a param-set, else the above described parameters are used!
-    grid_search_params = [(1,1)]
+    grid_search_params = [(1, 1)]
     if GRID_SEARCH:
-        print('\nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\nATTENTION: Grid-Search is active!\n--> Above set of hyperparameters is overwritten!!')
+        print('\nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\nATTENTION: Grid-Search is active!\n--> Above set of '
+              'hyperparameters is overwritten!!')
         g = GridSearch()
         grid_search_params = g.generateParamSet()
 
@@ -265,6 +271,10 @@ if __name__ == "__main__":
 
         ## Initialize Model and Optimizer
         model = QAModel(VOC_SIZE, EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, VOC_SIZE, N_LAYERS)
+
+        if PREVIOUSLY_TRAINED_MODEL is not None:
+            model.load_state_dict(torch.load(PREVIOUSLY_TRAINED_MODEL))
+
         optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
         criterion = nn.NLLLoss()
 
@@ -280,8 +290,8 @@ if __name__ == "__main__":
         params_str = reduce(lambda x, y: x + '_' + y, params_str)
         params_str_to_file = '\nSettings:\nEMBED_HIDDEN_SIZE: %d\nSTORY_HIDDEN_SIZE: %d\nQUERY_HIDDEN_SIZE: %d ' \
                              '\nN_LAYERS: %d\nBATCH_SIZE: %d\nEPOCHS: %d\nVOC_SIZE: %d\nLEARNING_RATE: %f\n' % (
-                  EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, EPOCHS, VOC_SIZE,
-                  LEARNING_RATE)
+                                 EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, EPOCHS,
+                                 VOC_SIZE, LEARNING_RATE)
 
         ## Start training
         start = time.time()
@@ -297,21 +307,25 @@ if __name__ == "__main__":
         for epoch in range(1, EPOCHS + 1):
             print("Epoche: %d" % epoch)
             # Train cycle
-            train_loss, train_accuracy, total_loss = train()
+            if not ONLY_EVALUATE:
+                train_loss, train_accuracy, total_loss = train()
 
             # Test cycle
             test_loss, test_accuracy = test()
 
             # Add Loss to history
-            train_loss_history = train_loss_history + train_loss
+            if not ONLY_EVALUATE:
+                train_loss_history = train_loss_history + train_loss
             test_loss_history = test_loss_history + test_loss
 
             # Add Loss to history
-            train_acc_history.append(train_accuracy)
+            if not ONLY_EVALUATE:
+                train_acc_history.append(train_accuracy)
             test_acc_history.append(test_accuracy)
-        log(BABI_TASK, train_loss_history,test_loss_history, params_str , train_acc_history, test_acc_history, params_str_to_file)
+        log(BABI_TASK, train_loss_history, test_loss_history, params_str, train_acc_history, test_acc_history,
+            params_str_to_file, model)
 
-        # Plot Loss 
+        # Plot Loss
         if PLOT_LOSS and not GRID_SEARCH:
             plt.figure()
             plt.plot(train_loss_history, label='train-loss', color='b')
