@@ -4,6 +4,7 @@ import torch
 import torch.autograd as autograd
 import torch.nn as nn
 import math
+from torch.utils.data import Dataset
 
 
 class Vocabulary:
@@ -11,8 +12,13 @@ class Vocabulary:
         self.voc_dict = vocabulary_dict if vocabulary_dict is not None else dict()
         self.embedding = embedding
 
+        self.voc_dict["<pad>"] = 0
+
         if file is not None:
             self.extend_with_file(file)
+
+    def __len__(self):
+        return len(self.voc_dict)
 
     def word_to_id(self, word):
         # This is a trick entry for words that are non existent.
@@ -20,6 +26,9 @@ class Vocabulary:
             return len(self.voc_dict)
 
         return self.voc_dict[word]
+
+    def words_to_id(self, words):
+        return [self.word_to_id(word) for word in words]
 
     def word_to_tensor(self, word):
         if self.embedding is None:
@@ -69,6 +78,19 @@ class Vocabulary:
         self.embedding = nn.Embedding(num_embeddings=len(self.voc_dict) + 1, embedding_dim=em_dim)
 
 
+class BAbiDataset(Dataset):
+    def __init__(self, instances, voc):
+        self.instances = instances
+        self.voc = voc
+
+    def __getitem__(self, index):
+        return self.instances[index].flat_story(), self.instances[index].question,  self.instances[index].answer, len(self.instances[index].flat_story()), len(self.instances[index].question)
+
+    def __len__(self):
+        return len(self.instances)
+
+
+
 class BAbIInstance:
     def __init__(self):
         self.indexed_story = []
@@ -92,6 +114,13 @@ class BAbIInstance:
 
     def hint_sentences(self):
         return self.indexed_story[self.hints[0] - 1] + self.indexed_story[self.hints[1] - 1]
+
+    def vectorize(self, voc: Vocabulary):
+        for s in self.indexed_story:
+            s[1] = voc.words_to_id(s[1])
+
+        self.question = voc.words_to_id(self.question)
+        self.answer = voc.word_to_id(self.answer)
 
     @staticmethod
     def instances_from_file(path):
@@ -122,7 +151,7 @@ class BAbIInstance:
                 current_story = []
 
             if len(line) < 3:
-                current_story.append((line[0], line[1]))
+                current_story.append([line[0], line[1]])
             else:
                 instance.indexed_story = current_story
                 instance.question = line[1]
