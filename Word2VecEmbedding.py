@@ -73,8 +73,6 @@ class W2VSkipGramEmbedding(nn.Module):
         # Linear Layer VxN
         self.embeddings = embeddings
 
-        self.activation = nn.Hardtanh()
-
         # Linear Layer NxV
         self.fc = nn.Linear(self.embeddings.embedding_dim, self.embeddings.num_embeddings)
 
@@ -90,7 +88,7 @@ class W2VSkipGramEmbedding(nn.Module):
         hidden_embedding = self.embeddings(input).view(1, -1)
 
         # Calculate values for context probabilities from feature vector
-        out = self.fc(self.activation(hidden_embedding))
+        out = self.fc(hidden_embedding)
 
         # Convert output to probabilities with logarithmic softmax.
         out = functional.log_softmax(out)
@@ -155,7 +153,7 @@ def main():
             exit(1)
     else:
         voc = bd.Vocabulary(learning_file)
-        voc.initialize_embedding(em_dim=2)
+        voc.initialize_embedding()
 
     w2v_instances = W2VInstance.instances_from_file(learning_file)
 
@@ -163,7 +161,7 @@ def main():
 
     w2v_net = W2VSkipGramEmbedding(voc.embedding)
 
-    train(w2v_net, w2v_instances[:3000], voc, number_epochs=50, plot_loss=True)
+    train(w2v_net, w2v_instances, voc, number_epochs=50, plot_loss=True)
 
     torch.save(voc.embedding.weight.data, "embedding.tensor")
 
