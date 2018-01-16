@@ -5,8 +5,10 @@ from torch.autograd import Variable
 import torch.nn.init as init
 import numpy as np
 
+
 class QAModel(nn.Module):
-    def __init__(self, input_size, embedding_size, story_hidden_size, query_hidden_size, output_size, n_layers=1, bidirectional=False):
+    def __init__(self, input_size, embedding_size, story_hidden_size, query_hidden_size, output_size, n_layers=1,
+                 bidirectional=False, custom_embedding=None):
         super(QAModel, self).__init__()
 
         self.voc_size = input_size
@@ -16,14 +18,18 @@ class QAModel(nn.Module):
         self.n_layers = n_layers
         self.n_directions = int(bidirectional) + 1
 
-        self.story_embedding = nn.Embedding(input_size, embedding_size) #Embedding bildet ab von Vokabular (Indize) auf n-dim Raum
+        # Embedding bildet ab von Vokabular (Indize) auf n-dim Raum
+        self.story_embedding = custom_embedding if custom_embedding is not None else nn.Embedding(input_size,
+                                                                                                  embedding_size)
 
-        self.story_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers,
-                                bidirectional=bidirectional, batch_first=True, dropout=0.3)
+        self.story_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers, bidirectional=bidirectional,
+                                batch_first=True, dropout=0.3)
 
-        self.query_embedding = nn.Embedding(input_size, embedding_size)
-        self.query_rnn = nn.GRU(embedding_size, query_hidden_size, n_layers,
-                                bidirectional=bidirectional, batch_first=True, dropout=0.3)
+        self.query_embedding = custom_embedding if custom_embedding is not None else nn.Embedding(input_size,
+                                                                                                  embedding_size)
+
+        self.query_rnn = nn.GRU(embedding_size, query_hidden_size, n_layers, bidirectional=bidirectional,
+                                batch_first=True, dropout=0.3)
 
         # info: if we use the old-forward function fc-layer has input-length: "story_hidden_size+query_hidden_size"
         self.fc = nn.Linear(story_hidden_size, output_size)
@@ -41,29 +47,28 @@ class QAModel(nn.Module):
         query_hidden = self._init_hidden(batch_size, self.query_hidden_size)
 
         # Create Story-Embeddings
-        s_e = self.story_embedding(story)   # encodings have size: batch_size*length_of_sequence*EMBBEDDING_SIZE
+        s_e = self.story_embedding(story)  # encodings have size: batch_size*length_of_sequence*EMBBEDDING_SIZE
 
         # packed Story-Embeddings into RNN
-        packed_story = torch.nn.utils.rnn.pack_padded_sequence(s_e, story_lengths.data.cpu().numpy(), batch_first=True)  # pack story
+        packed_story = torch.nn.utils.rnn.pack_padded_sequence(s_e, story_lengths.data.cpu().numpy(),
+                                                               batch_first=True)  # pack story
         story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
         # unpacking is not necessary, because we use hidden states of RNN
 
         q_e = self.query_embedding(query)
         query_output, query_hidden = self.query_rnn(q_e, query_hidden)
 
-        merged = torch.cat([story_hidden[0], query_hidden[0]],1)
+        merged = torch.cat([story_hidden[0], query_hidden[0]], 1)
         merged = merged.view(batch_size, -1)
         fc_output = self.fc(merged)
         sm_output = self.softmax(fc_output)
 
         return sm_output
 
-
     # new forward-function with question-code
     # achieves 100% on Task 1!!
     # --> question-code is like an attention-mechanism!
     def forward(self, story, query, story_lengths, query_lengths):
-
         # Calculate Batch-Size
         batch_size = story.size(0)
 
@@ -81,8 +86,8 @@ class QAModel(nn.Module):
         # so that the story_rnn can focus on the question already
         # and can forget unnecessary information!
         question_code = query_hidden[0]
-        question_code = question_code.view(batch_size,1,self.query_hidden_size)
-        question_code = question_code.repeat(1,story.size(1),1)
+        question_code = question_code.view(batch_size, 1, self.query_hidden_size)
+        question_code = question_code.repeat(1, story.size(1), 1)
 
         # Embed story
         s_e = self.story_embedding(story)
@@ -91,7 +96,8 @@ class QAModel(nn.Module):
         combined = s_e + question_code
 
         # put combined tensor into story_rnn --> attention-mechansism through question_code
-        packed_story = torch.nn.utils.rnn.pack_padded_sequence(combined, story_lengths.data.cpu().numpy(), batch_first=True)  # pack story
+        packed_story = torch.nn.utils.rnn.pack_padded_sequence(combined, story_lengths.data.cpu().numpy(),
+                                                               batch_first=True)  # pack story
         story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
         # remember: because we use the hidden states of the RNN, we don't have to unpack the tensor!
 
@@ -102,18 +108,17 @@ class QAModel(nn.Module):
         return sm_output
 
     def _init_hidden(self, batch_size, hidden_size):
-        hidden = torch.zeros(self.n_layers * self.n_directions,
-                             batch_size, hidden_size)
+        hidden = torch.zeros(self.n_layers * self.n_directions, batch_size, hidden_size)
         return Variable(hidden)
 
 
 class QAFFModel(nn.Module):
-    #This modell overfits greatly! Not suitable for the problem, but good to illustrate why we use the RNN!
+    # This modell overfits greatly! Not suitable for the problem, but good to illustrate why we use the RNN!
     def __init__(self, input_size, embedding_size, story_hidden_size, query_hidden_size, output_size, n_layers=1,
-                 bidirectional=False, s_len = -1, q_len = -1):
+                 bidirectional=False, s_len=-1, q_len=-1, custom_embedding=None):
         super(QAFFModel, self).__init__()
-        assert(s_len > 1)
-        assert(q_len > 1)
+        assert (s_len > 1)
+        assert (q_len > 1)
         self.voc_size = input_size
         self.embedding_size = embedding_size
         self.story_hidden_size = story_hidden_size
@@ -121,14 +126,16 @@ class QAFFModel(nn.Module):
         self.n_layers = n_layers
         self.s_len = s_len
         self.q_len = q_len
-        self.story_embedding = nn.Embedding(input_size,
-                                            embedding_size)  # Embedding bildet ab von Vokabular (Indize) auf n-dim Raum
+        self.story_embedding = custom_embedding if custom_embedding is not None else nn.Embedding(input_size,
+                                                                                                  embedding_size)
+        # Embedding bildet ab von Vokabular (Indize) auf n-dim Raum
 
-        self.query_embedding = nn.Embedding(input_size, embedding_size)
+        self.query_embedding = custom_embedding if custom_embedding is not None else nn.Embedding(input_size,
+                                                                                                  embedding_size)
 
         # info: if we use the old-forward function fc-layer has input-length: "story_hidden_size+query_hidden_size"
-        fc1o = int(np.floor(0.5 * embedding_size*(self.q_len + self.s_len)))
-        self.fc1 = nn.Linear(embedding_size*(self.q_len + self.s_len), fc1o)
+        fc1o = int(np.floor(0.5 * embedding_size * (self.q_len + self.s_len)))
+        self.fc1 = nn.Linear(embedding_size * (self.q_len + self.s_len), fc1o)
         init.xavier_uniform(self.fc1.weight, gain=np.sqrt(2))
         init.constant(self.fc1.bias, 0.1)
         self.fc1a = nn.Tanh()
@@ -148,19 +155,19 @@ class QAFFModel(nn.Module):
         # Create Story-Embeddings
         s_e = self.story_embedding(story)  # encodings have size: batch_size*length_of_sequence*EMBBEDDING_SIZE
 
-        #Create Question embedding
+        # Create Question embedding
         q_e = self.query_embedding(query)
 
-        #Transform the tensors to do the processing
+        # Transform the tensors to do the processing
         s_e = s_e.view(batch_size, -1)
         q_e = q_e.view(batch_size, -1)
         merged = torch.cat([s_e, q_e], 1)
 
-        #First fc with tanh
+        # First fc with tanh
         fc_output = self.fc1(merged)
         th_out = self.fc1a(fc_output)
 
-        #Apply dropout
+        # Apply dropout
         th_out1 = self.dropo(th_out)
         out = self.fc2(th_out1)
         sm_output = self.softmax(out)
