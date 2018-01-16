@@ -11,6 +11,7 @@ from torch.autograd import Variable
 from model.QAModel import QAModel
 from utils.utils import time_since
 import time
+import os
 
 
 # Train cycle
@@ -138,6 +139,34 @@ class GridSearch():
         return self.params
 
 
+def log(task, train_loss, test_loss, params, train_accuracy, test_accuracy, params_file):
+    date = str(time.strftime("%H:%M:%S"))
+    fname = "results/" + date.replace(":", "_") + params + "_task_" + str(task) + "/"
+    try:
+        os.stat(fname)
+    except:
+        os.mkdir(fname)
+    tr_loss = np.array(train_loss)
+    te_loss = np.array(test_loss)
+    tr_acc = np.array(train_accuracy)
+    te_acc = np.array(test_accuracy)
+    tr_loss.tofile(fname + "train_loss.csv", sep=";")
+    te_loss.tofile(fname + "test_loss.csv", sep=";")
+    tr_acc.tofile(fname + "train_accuracy.csv", sep=";")
+    te_acc.tofile(fname + "test_accuracy.csv", sep=";")
+    plt.figure()
+    plt.plot(train_loss, label='train-loss', color='b')
+    plt.plot(test_loss, label='test-loss', color='r')
+    plt.legend()
+    plt.savefig(fname + "loss_history.png")
+    plt.figure()
+    plt.plot(train_accuracy, label='train-accuracy', color='b')
+    plt.plot(test_accuracy, label='test-accuracy', color='r')
+    plt.legend()
+    plt.savefig(fname + "acc_history.png")
+    with open(fname+ "params.txt", "w") as text_file:
+        text_file.write(params_file)
+
 if __name__ == "__main__":
 
     BABI_TASK = 1
@@ -241,8 +270,14 @@ if __name__ == "__main__":
                   LEARNING_RATE))
 
         # print(model)
-
-
+        params = [EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, EPOCHS, VOC_SIZE,
+                  LEARNING_RATE]
+        params_str = [str(x) for x in params]
+        params_str = reduce(lambda x, y: x + '_' + y, params_str)
+        params_str_to_file = '\nSettings:\nEMBED_HIDDEN_SIZE: %d\nSTORY_HIDDEN_SIZE: %d\nQUERY_HIDDEN_SIZE: %d ' \
+                             '\nN_LAYERS: %d\nBATCH_SIZE: %d\nEPOCHS: %d\nVOC_SIZE: %d\nLEARNING_RATE: %f\n' % (
+                  EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, EPOCHS, VOC_SIZE,
+                  LEARNING_RATE)
         ## Start training
         start = time.time()
         if PRINT_LOSS:
@@ -269,6 +304,7 @@ if __name__ == "__main__":
             # Add Loss to history
             train_acc_history.append(train_accuracy)  # = train_acc_history + [train_accuracy]
             test_acc_history.append(test_accuracy)  # = test_acc_history + test_accuracy
+        log(BABI_TASK, train_loss_history,test_loss_history, params_str , train_acc_history, test_acc_history, params_str_to_file)
 
         # Plot Loss
         if PLOT_LOSS:
