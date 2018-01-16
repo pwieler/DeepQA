@@ -11,6 +11,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
 import torch.nn.init as init
+import preprocessing.bAbIData as bd
 
 
 # Some utility functions
@@ -19,156 +20,6 @@ def time_since(since):
     m = math.floor(s / 60)
     s -= m * 60
     return '%dm %ds' % (m, s)
-
-
-def pad_sequences(sequences, maxlen=None, dtype='int32',
-                  padding='pre', truncating='pre', value=0.):
-    """Pads each sequence to the same length (length of the longest sequence).
-    If maxlen is provided, any sequence longer
-    than maxlen is truncated to maxlen.
-    Truncation happens off either the beginning (default) or
-    the end of the sequence.
-    Supports post-padding and pre-padding (default).
-    # Arguments
-        sequences: list of lists where each element is a sequence
-        maxlen: int, maximum length
-        dtype: type to cast the resulting sequence.
-        padding: 'pre' or 'post', pad either before or after each sequence.
-        truncating: 'pre' or 'post', remove values from sequences larger than
-            maxlen either in the beginning or in the end of the sequence
-        value: float, value to pad the sequences to the desired value.
-    # Returns
-        x: numpy array with dimensions (number_of_sequences, maxlen)
-    # Raises
-        ValueError: in case of invalid values for `truncating` or `padding`,
-            or in case of invalid shape for a `sequences` entry.
-    """
-    if not hasattr(sequences, '__len__'):
-        raise ValueError('`sequences` must be iterable.')
-    lengths = []
-    for x in sequences:
-        if not hasattr(x, '__len__'):
-            raise ValueError('`sequences` must be a list of iterables. '
-                             'Found non-iterable: ' + str(x))
-        lengths.append(len(x))
-
-    num_samples = len(sequences)
-    if maxlen is None:
-        maxlen = np.max(lengths)
-
-    # take the sample shape from the first non empty sequence
-    # checking for consistency in the main loop below.
-    sample_shape = tuple()
-    for s in sequences:
-        if len(s) > 0:
-            sample_shape = np.asarray(s).shape[1:]
-            break
-
-    x = (np.ones((num_samples, maxlen) + sample_shape) * value).astype(dtype)
-    for idx, s in enumerate(sequences):
-        if not len(s):
-            continue  # empty list/array was found
-        if truncating == 'pre':
-            trunc = s[-maxlen:]
-        elif truncating == 'post':
-            trunc = s[:maxlen]
-        else:
-            raise ValueError('Truncating type "%s" not understood' % truncating)
-
-        # check `trunc` has expected shape
-        trunc = np.asarray(trunc, dtype=dtype)
-        if trunc.shape[1:] != sample_shape:
-            raise ValueError('Shape of sample %s of sequence at position %s is different from expected shape %s' %
-                             (trunc.shape[1:], idx, sample_shape))
-
-        if padding == 'post':
-            x[idx, :len(trunc)] = trunc
-        elif padding == 'pre':
-            x[idx, -len(trunc):] = trunc
-        else:
-            raise ValueError('Padding type "%s" not understood' % padding)
-    return x
-
-
-def parse_stories(lines, only_supporting=False):
-    '''Parse stories provided in the bAbi tasks format
-
-    If only_supporting is true,
-    only the sentences that support the answer are kept.
-    '''
-    data = []
-    story = []
-    for line in lines:
-        line = line.strip()
-        nid, line = line.split(' ', 1)
-        nid = int(nid)
-        if nid == 1:
-            story = []
-        if '\t' in line:
-            q, a, supporting = line.split('\t')
-            q = tokenize(q)
-            substory = None
-            if only_supporting:
-                # Only select the related substory
-                supporting = map(int, supporting.split())
-                substory = [story[i - 1] for i in supporting]
-            else:
-                # Provide all the substories
-                substory = [x for x in story if x]
-            data.append((substory, q, a))
-            story.append('')
-        else:
-            sent = tokenize(line)
-            story.append(sent)
-    return data
-
-
-def get_stories(f, only_supporting=False, max_length=None):
-    '''Given a file name, read the file, retrieve the stories,
-    and then convert the sentences into a single story.
-
-    If max_length is supplied,
-    any stories longer than max_length tokens will be discarded.
-    '''
-    data = parse_stories(f.readlines(), only_supporting=only_supporting)
-    flatten = lambda data: reduce(lambda x, y: x + y, data)
-    data = [(flatten(story), q, answer) for story, q, answer in data if
-            not max_length or len(flatten(story)) < max_length]
-    return data
-
-
-def tokenize(sent):
-    '''Return the tokens of a sentence including punctuation.
-
-    >>> tokenize('Bob dropped the apple. Where is the apple?')
-    ['Bob', 'dropped', 'the', 'apple', '.', 'Where', 'is', 'the', 'apple', '?']
-    '''
-    return [x.strip() for x in re.split('(\W+)?', sent) if x.strip()]
-
-
-def vectorize_stories(data, word_idx, story_maxlen, query_maxlen, binary_task = False):
-    xs = []
-    xqs = []
-    ys = []
-    for story, query, answer in data:
-        x = [word_idx[w] for w in story]
-        xq = [word_idx[w] for w in query]
-        # let's not forget that index 0 is reserved
-        # y = np.zeros(len(word_idx) + 1)
-        # y[word_idx[answer]] = 1
-        # no one-hot-encoding for answer anymore!!
-        y = word_idx[answer]
-        if (binary_task):
-            y = (answer=="yes")
-        xs.append(x)
-        xqs.append(xq)
-        ys.append(y)
-    xsl = [len(l) for l in xs]  # contains length of stories
-    xqsl = [len(l) for l in xqs]  # contains length of queries
-
-    return pad_sequences(xs, maxlen=story_maxlen, padding='post'), pad_sequences(xqs, maxlen=query_maxlen,
-                                                                                 padding='post'), np.array(
-        ys), np.array(xsl), np.array(xqsl)  # info pad_sequence wurde in rnn.py reinkopiert
 
 
 class QADataset(Dataset):
@@ -190,7 +41,7 @@ class QADataset(Dataset):
 
 class QAModel(nn.Module):
     def __init__(self, input_size, embedding_size, story_hidden_size, query_hidden_size, output_size, n_layers=1,
-                 bidirectional=False, binary_task = False):
+                 bidirectional=False, binary_task=False):
         super(QAModel, self).__init__()
 
         self.voc_size = input_size
@@ -205,12 +56,12 @@ class QAModel(nn.Module):
         self.story_embedding = nn.Embedding(input_size,
                                             embedding_size)  # Embedding bildet ab von Vokabular (Indize) auf n-dim Raum
 
-        self.story_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers,
-                                bidirectional=bidirectional, batch_first=True, dropout=0.3)
+        self.story_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers, bidirectional=bidirectional,
+                                batch_first=True, dropout=0.3)
 
         self.query_embedding = nn.Embedding(input_size, embedding_size)
-        self.query_rnn = nn.GRU(embedding_size, query_hidden_size, n_layers,
-                                bidirectional=bidirectional, batch_first=True, dropout=0.3)
+        self.query_rnn = nn.GRU(embedding_size, query_hidden_size, n_layers, bidirectional=bidirectional,
+                                batch_first=True, dropout=0.3)
 
         # info: if we use the old-forward function fc-layer has input-length: "story_hidden_size+query_hidden_size"
         self.fc = nn.Linear(story_hidden_size, self.target_size)
@@ -289,18 +140,17 @@ class QAModel(nn.Module):
         return sm_output
 
     def _init_hidden(self, batch_size, hidden_size):
-        hidden = torch.zeros(self.n_layers * self.n_directions,
-                             batch_size, hidden_size)
+        hidden = torch.zeros(self.n_layers * self.n_directions, batch_size, hidden_size)
         return Variable(hidden)
 
 
 class QAFFModel(nn.Module):
-    #This modell overfits greatly! Not suitable for the problem, but good to illustrate why we use the RNN!
+    # This modell overfits greatly! Not suitable for the problem, but good to illustrate why we use the RNN!
     def __init__(self, input_size, embedding_size, story_hidden_size, query_hidden_size, output_size, n_layers=1,
-                 bidirectional=False, s_len = -1, q_len = -1):
+                 bidirectional=False, s_len=-1, q_len=-1):
         super(QAFFModel, self).__init__()
-        assert(s_len > 1)
-        assert(q_len > 1)
+        assert (s_len > 1)
+        assert (q_len > 1)
         self.voc_size = input_size
         self.embedding_size = embedding_size
         self.story_hidden_size = story_hidden_size
@@ -314,8 +164,8 @@ class QAFFModel(nn.Module):
         self.query_embedding = nn.Embedding(input_size, embedding_size)
 
         # info: if we use the old-forward function fc-layer has input-length: "story_hidden_size+query_hidden_size"
-        fc1o = int(np.floor(0.5 * embedding_size*(self.q_len + self.s_len)))
-        self.fc1 = nn.Linear(embedding_size*(self.q_len + self.s_len), fc1o)
+        fc1o = int(np.floor(0.5 * embedding_size * (self.q_len + self.s_len)))
+        self.fc1 = nn.Linear(embedding_size * (self.q_len + self.s_len), fc1o)
         init.xavier_uniform(self.fc1.weight, gain=np.sqrt(2))
         init.constant(self.fc1.bias, 0.1)
         self.fc1a = nn.Tanh()
@@ -335,27 +185,28 @@ class QAFFModel(nn.Module):
         # Create Story-Embeddings
         s_e = self.story_embedding(story)  # encodings have size: batch_size*length_of_sequence*EMBBEDDING_SIZE
 
-        #Create Question embedding
+        # Create Question embedding
         q_e = self.query_embedding(query)
 
-        #Transform the tensors to do the processing
+        # Transform the tensors to do the processing
         s_e = s_e.view(batch_size, -1)
         q_e = q_e.view(batch_size, -1)
         merged = torch.cat([s_e, q_e], 1)
 
-        #First fc with tanh
+        # First fc with tanh
         fc_output = self.fc1(merged)
         th_out = self.fc1a(fc_output)
 
-        #Apply dropout
+        # Apply dropout
         th_out1 = self.dropo(th_out)
         out = self.fc2(th_out1)
         sm_output = self.softmax(out)
 
         return sm_output
 
+
 # Train cycle
-def train():
+def train(model, train_loader, criterion, optimizer, epoch, start, PRINT_LOSS=True):
     total_loss = 0
     correct = 0
 
@@ -365,13 +216,13 @@ def train():
 
     model.train()
 
-    for i, (stories, queries, answers, sl, ql) in enumerate(train_loader, 1):
+    for i, (stories_bd, queries_bd, answers_bd, sl_bd, ql_bd) in enumerate(train_loader, 1):
 
-        stories = Variable(stories.type(torch.LongTensor))
-        queries = Variable(queries.type(torch.LongTensor))
-        answers = Variable(answers.type(torch.LongTensor))
-        sl = Variable(sl.type(torch.LongTensor))
-        ql = Variable(ql.type(torch.LongTensor))
+        stories = Variable(stories_bd.type(torch.LongTensor))
+        queries = Variable(queries_bd.type(torch.LongTensor))
+        answers = Variable(answers_bd.type(torch.LongTensor))
+        sl = Variable(sl_bd.type(torch.LongTensor))
+        ql = Variable(ql_bd.type(torch.LongTensor))
 
         # Sort stories by their length (because of packing in the forward step!)
         sl, perm_idx = sl.sort(0, descending=True)
@@ -382,7 +233,7 @@ def train():
 
         output = model(stories, queries, sl, ql)
 
-        loss = criterion(output, answers)
+        loss = criterion(output, answers.view(-1))
 
         total_loss += loss.data[0]
 
@@ -394,26 +245,23 @@ def train():
 
         if PRINT_LOSS:
             if i % 1 == 0:
-                print('[{}] Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.2f}'.format(
-                    time_since(start), epoch, i *
-                                              len(stories), len(train_loader.dataset),
-                                              100. * i * len(stories) / len(train_loader.dataset),
-                    loss.data[0]))
+                print('[{}] Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.2f}'.format(time_since(start), epoch,
+                        i * len(stories), len(train_loader.dataset),
+                        100. * i * len(stories) / len(train_loader.dataset), loss.data[0]))
 
         pred_answers = output.data.max(1)[1]
         correct += pred_answers.eq(
-            answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
+                answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
 
     accuracy = 100. * correct / train_data_size
 
     # if PRINT_LOSS:
-    print('Training set: Accuracy: {}/{} ({:.0f}%)'.format(
-        correct, train_data_size, accuracy))
+    print('Training set: Accuracy: {}/{} ({:.0f}%)'.format(correct, train_data_size, accuracy))
 
     return train_loss_history, accuracy, total_loss  # loss per epoch
 
 
-def test():
+def test(model, test_loader, criterion, PRINT_LOSS):
     model.eval()
 
     if PRINT_LOSS:
@@ -441,135 +289,126 @@ def test():
 
         output = model(stories, queries, sl, ql)
 
-        loss = criterion(output, answers)
+        loss = criterion(output, answers.view(-1))
         test_loss_history.append(loss.data[0])
 
         pred_answers = output.data.max(1)[1]
         correct += pred_answers.eq(
-            answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
+                answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
 
     accuracy = 100. * correct / test_data_size
 
     # if PRINT_LOSS:
-    print('Test set: Accuracy: {}/{} ({:.0f}%)'.format(
-        correct, test_data_size, accuracy))
+    print('Test set: Accuracy: {}/{} ({:.0f}%)'.format(correct, test_data_size, accuracy))
 
     return test_loss_history, accuracy
 
 
-## Load data
+def main():
+    ## Parameters
+    EMBED_HIDDEN_SIZE = 50
+    STORY_HIDDEN_SIZE = 50
+    QUERY_HIDDEN_SIZE = 50  # note: since we are adding the encoded query to the embedded stories,
+    #  QUERY_HIDDEN_SIZE should be equal to EMBED_HIDDEN_SIZE
 
-data_path = "data/"
+    N_LAYERS = 1
+    BATCH_SIZE = 32
+    EPOCHS = 40
+    LEARNING_RATE = 0.001  # 0.0001
 
-#challenge = 'tasks_1-20_v1-2/shuffled/qa1_single-supporting-fact_{}.txt'
-# challenge = 'tasks_1-20_v1-2/en/qa2_two-supporting-facts_{}.txt'
-# challenge = 'tasks_1-20_v1-2/en/qa3_three-supporting-facts_{}.txt'
-challenge = 'tasks_1-20_v1-2/en/qa6_yes-no-questions_{}.txt'
+    PLOT_LOSS = True
 
-print(challenge)
+    ## Load data
+    voc = bd.Vocabulary()
+    voc.extend_with_file("data/tasks_1-20_v1-2/en/qa1_single-supporting-fact_train.txt")
+    voc.extend_with_file("data/tasks_1-20_v1-2/en/qa2_two-supporting-facts_train.txt")
+    voc.extend_with_file("data/tasks_1-20_v1-2/en/qa3_three-supporting-facts_train.txt")
+    voc.extend_with_file("data/tasks_1-20_v1-2/en/qa6_yes-no-questions_train.txt")
 
-binary_challange = False
-if ("yes-no" in challenge):
-    binary_challange = True
+    qa1_train_instances = bd.BAbIInstance.instances_from_file(
+            "data/tasks_1-20_v1-2/en/qa1_single-supporting-fact_train.txt")
+    qa1_test_instances = bd.BAbIInstance.instances_from_file(
+            "data/tasks_1-20_v1-2/en/qa1_single-supporting-fact_test.txt")
 
-train_data = get_stories(open(data_path + challenge.format('train'), 'r'))
-test_data = get_stories(open(data_path + challenge.format('test'), 'r'))
+    qa2_train_instances = bd.BAbIInstance.instances_from_file(
+            "data/tasks_1-20_v1-2/en/qa2_two-supporting-facts_train.txt")
+    qa2_test_instances = bd.BAbIInstance.instances_from_file(
+            "data/tasks_1-20_v1-2/en/qa2_two-supporting-facts_test.txt")
 
-## Preprocess data
+    qa3_train_instances = bd.BAbIInstance.instances_from_file(
+            "data/tasks_1-20_v1-2/en/qa3_three-supporting-facts_train.txt")
+    qa3_test_instances = bd.BAbIInstance.instances_from_file(
+            "data/tasks_1-20_v1-2/en/qa3_three-supporting-facts_test.txt")
 
-vocab = set()
-for story, q, answer in train_data + test_data:
-    vocab |= set(story + q + [answer])
-vocab = sorted(vocab)
+    qa6_train_instances = bd.BAbIInstance.instances_from_file("data/tasks_1-20_v1-2/en/qa6_yes-no-questions_train.txt")
+    qa6_test_instances = bd.BAbIInstance.instances_from_file("data/tasks_1-20_v1-2/en/qa6_yes-no-questions_test.txt")
 
-# Reserve 0 for masking via pad_sequences
-# Vocabluary Size
-vocab_size = len(vocab) + 1
-# Creates Dictionary
-word_idx = dict((c, i + 1) for i, c in enumerate(vocab))
+    train_instances = qa1_train_instances + qa2_train_instances + qa3_train_instances + qa6_train_instances
+    test_instances = qa1_test_instances + qa2_test_instances + qa3_test_instances + qa6_test_instances
 
-# Max Length of Story and Query
-story_maxlen = max(map(len, (x for x, _, _ in train_data + test_data)))
-query_maxlen = max(map(len, (x for _, x, _ in train_data + test_data)))
+    all_instances = train_instances + qa1_test_instances
 
-## Parameters
-EMBED_HIDDEN_SIZE = 50
-STORY_HIDDEN_SIZE = 50
-QUERY_HIDDEN_SIZE = 50  # note: since we are adding the encoded query to the embedded stories,
-#  QUERY_HIDDEN_SIZE should be equal to EMBED_HIDDEN_SIZE
-N_LAYERS = 1
-BATCH_SIZE = 32
-EPOCHS = 40
-VOC_SIZE = vocab_size
-LEARNING_RATE = 0.001  # 0.0001
+    for inst in train_instances:
+        inst.vectorize(voc)
 
-print('\nSettings:\nEMBED_HIDDEN_SIZE: %d\nSTORY_HIDDEN_SIZE: %d\nQUERY_HIDDEN_SIZE: %d'
-      '\nN_LAYERS: %d\nBATCH_SIZE: %d\nEPOCHS: %d\nVOC_SIZE: %d\nLEARNING_RATE: %f\n\n'
-      % (
-      EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, EPOCHS, VOC_SIZE, LEARNING_RATE))
+    for inst in test_instances:
+        inst.vectorize(voc)
 
-PLOT_LOSS = False
-PRINT_LOSS = True
+    train_dataset = bd.BAbiDataset(train_instances)
+    test_dataset = bd.BAbiDataset(test_instances)
 
-## Create Test & Train-Data
-x, xq, y, xl, xql, = vectorize_stories(train_data, word_idx, story_maxlen,
-                                       query_maxlen)  # x: story, xq: query, y: answer, xl: story_lengths, xql: query_lengths
-tx, txq, ty, txl, txql = vectorize_stories(test_data, word_idx, story_maxlen,
-                                           query_maxlen)  # same naming but for test_data
+    train_loader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    test_loader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-train_dataset = QADataset(x, xq, y, xl, xql)
-train_loader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    ## Initialize Model and Optimizer
 
-test_dataset = QADataset(tx, txq, ty, txl, txql)
-test_loader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
+    model = QAModel(len(voc), EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, len(voc), N_LAYERS)
 
-## Initialize Model and Optimizer
+    criterion = nn.NLLLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-model = QAModel(VOC_SIZE, EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, VOC_SIZE, N_LAYERS)
-# criterion = nn.CrossEntropyLoss()
-criterion = nn.NLLLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    print(model)
 
-print(model)
+    ## Start training
 
-## Start training
-
-start = time.time()
-if PRINT_LOSS:
+    start = time.time()
     print("Training for %d epochs..." % EPOCHS)
 
-train_loss_history = []
-test_loss_history = []
+    train_loss_history = []
+    test_loss_history = []
 
-train_acc_history = []
-test_acc_history = []
+    train_acc_history = []
+    test_acc_history = []
 
-for epoch in range(1, EPOCHS + 1):
-    print("Epoche: %d" % epoch)
-    # Train cycle
-    train_loss, train_accuracy, total_loss = train()
+    for epoch in range(1, EPOCHS + 1):
+        # Train cycle
+        train_loss, train_accuracy, total_loss = train(model, train_loader, criterion, optimizer, epoch, start)
 
-    # Test cycle
-    test_loss, test_accuracy = test()
+        # Test cycle
+        test_loss, test_accuracy = test(model, test_loader, criterion)
 
-    # Add Loss to history
-    train_loss_history = train_loss_history + train_loss
-    test_loss_history = test_loss_history + test_loss
+        # Add Loss to history
+        train_loss_history = train_loss_history + train_loss
+        test_loss_history = test_loss_history + test_loss
 
-    # Add Loss to history
-    train_acc_history.append(train_accuracy)  # = train_acc_history + [train_accuracy]
-    test_acc_history.append(test_accuracy)  # = test_acc_history + test_accuracy
+        # Add Loss to history
+        train_acc_history.append(train_accuracy)  # = train_acc_history + [train_accuracy]
+        test_acc_history.append(test_accuracy)  # = test_acc_history + test_accuracy
 
-# Plot Loss
-if PLOT_LOSS:
-    plt.figure()
-    plt.hold(True)
-    plt.plot(train_loss_history, 'b')
-    plt.plot(test_loss_history, 'r')
-    plt.show()
+    # Plot Loss
+    if PLOT_LOSS:
+        plt.figure()
+        plt.hold(True)
+        plt.plot(train_loss_history, 'b')
+        plt.plot(test_loss_history, 'r')
+        plt.show()
 
-    plt.figure()
-    plt.hold(True)
-    plt.plot(train_acc_history, 'b')
-    plt.plot(test_acc_history, 'r')
-    plt.show()
+        plt.figure()
+        plt.hold(True)
+        plt.plot(train_acc_history, 'b')
+        plt.plot(test_acc_history, 'r')
+        plt.show()
+
+
+if __name__ == "__main__":
+    main()

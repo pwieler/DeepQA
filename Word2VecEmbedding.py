@@ -1,16 +1,18 @@
-import torch
-import torch.nn as nn
-import torch.autograd as autograd
-import torch.optim as optim
-import torch.optim.lr_scheduler
-import torch.nn.functional as functional
-from random import randint
-from typing import List
-import re
 import os
 import pickle
-import bAbIData as bd
+import re
+from random import randint
+from typing import List
+
 import matplotlib.pyplot as plt
+import torch
+import torch.autograd as autograd
+import torch.nn as nn
+import torch.nn.functional as functional
+import torch.optim as optim
+import torch.optim.lr_scheduler
+
+from preprocessing import bAbIData as bd
 
 print("PyTorch Version: " + torch.__version__)
 

@@ -4,7 +4,9 @@ import torch
 import torch.autograd as autograd
 import torch.nn as nn
 import math
+import copy
 from torch.utils.data import Dataset
+import numpy as np
 
 
 class Vocabulary:
@@ -27,7 +29,7 @@ class Vocabulary:
 
         return self.voc_dict[word]
 
-    def words_to_id(self, words):
+    def words_to_ids(self, words):
         return [self.word_to_id(word) for word in words]
 
     def word_to_tensor(self, word):
@@ -78,19 +80,6 @@ class Vocabulary:
         self.embedding = nn.Embedding(num_embeddings=len(self.voc_dict) + 1, embedding_dim=em_dim)
 
 
-class BAbiDataset(Dataset):
-    def __init__(self, instances, voc):
-        self.instances = instances
-        self.voc = voc
-
-    def __getitem__(self, index):
-        return self.instances[index].flat_story(), self.instances[index].question,  self.instances[index].answer, len(self.instances[index].flat_story()), len(self.instances[index].question)
-
-    def __len__(self):
-        return len(self.instances)
-
-
-
 class BAbIInstance:
     def __init__(self):
         self.indexed_story = []
@@ -117,10 +106,10 @@ class BAbIInstance:
 
     def vectorize(self, voc: Vocabulary):
         for s in self.indexed_story:
-            s[1] = voc.words_to_id(s[1])
+            s[1] = voc.words_to_ids(s[1])
 
-        self.question = voc.words_to_id(self.question)
-        self.answer = voc.word_to_id(self.answer)
+        self.question = voc.words_to_ids(self.question)
+        self.answer = voc.words_to_ids(self.answer)
 
     @staticmethod
     def instances_from_file(path):
@@ -147,18 +136,19 @@ class BAbIInstance:
 
         for line in ind_lines:
             if line[0] is 1:
-                instance = BAbIInstance()
                 current_story = []
 
             if len(line) < 3:
                 current_story.append([line[0], line[1]])
             else:
-                instance.indexed_story = current_story
-                instance.question = line[1]
-                instance.answer = line[2]
-                instance.hints = line[3]
+                instance.indexed_story = copy.deepcopy(current_story)
+                instance.question = copy.deepcopy(line[1])
+                instance.answer = [line[2]]
+                instance.hints = copy.deepcopy(line[3])
 
                 training_instances.append(instance)
+
+                instance = BAbIInstance()
 
         return training_instances
 
@@ -198,6 +188,36 @@ class BAbIInstance:
             line[1] = [st for st in re.split("(\W)", line[1]) if st not in ["", " ", "\n"]]
 
         return indexed_lines
+
+
+class BAbiDataset(Dataset):
+    def __init__(self, instances: List[BAbIInstance], pad_sequences=True):
+        self.instances = instances
+        self.pad_sequences = pad_sequences
+        self.maxlen_story = max([len(inst.flat_story()) for inst in instances])
+        self.maxlen_question = max([len(inst.question) for inst in instances])
+
+    def __getitem__(self, index):
+        out_story = []
+        out_question = []
+
+        out_answer = np.array(self.instances[index].answer)
+        out_story_len = len(self.instances[index].flat_story())
+        out_question_len = len(self.instances[index].question)
+
+        if self.pad_sequences:
+            out_story = np.pad(self.instances[index].flat_story(), pad_width=(0, self.maxlen_story - out_story_len),
+                               mode='constant', constant_values=0)
+            out_question = np.pad(self.instances[index].question, pad_width=(0, self.maxlen_story - out_question_len),
+                                  mode='constant', constant_values=0)
+        else:
+            out_story = np.array(self.instances[index].flat_story())
+            out_question = np.array(self.instances[index].question)
+
+        return out_story, out_question, out_answer, out_story_len, out_question_len
+
+    def __len__(self):
+        return len(self.instances)
 
 
 def main():
