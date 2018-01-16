@@ -39,10 +39,6 @@ def train():
         queries = queries[perm_idx]
         answers = answers[perm_idx]
 
-        print("Stories: " + str(stories.data.numpy()))
-        print("Queries: " + str(queries.data.numpy()))
-        print("Answers: " + str(answers.data.numpy()))
-
         output = model(stories, queries, sl, ql)
 
         answers_flat = answers.view(-1)
@@ -144,11 +140,7 @@ class GridSearch():
 
 if __name__ == "__main__":
 
-    np.set_printoptions(threshold=np.nan)
-
     BABI_TASK = 1
-
-    debug = True
 
     ## Parameters
     EMBED_HIDDEN_SIZE = 50
@@ -162,6 +154,7 @@ if __name__ == "__main__":
     LEARNING_RATE = 0.001  # 0.0001
 
     PLOT_LOSS = True
+    PRINT_LOSS = True
 
     ## Load data
     voc = bd.Vocabulary()
@@ -219,9 +212,6 @@ if __name__ == "__main__":
 
     g = GridSearch()
     params = g.generateParamSet()
-
-    PLOT_LOSS = False
-    PRINT_LOSS = False
 
     for i, param_set in enumerate(params):
 

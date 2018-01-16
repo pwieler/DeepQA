@@ -239,7 +239,7 @@ class BAbiDataset(Dataset):
 
     def __getitem__(self, index):
         out_story = []
-        out_question = []
+        out_question = np.array(self.instances[index].question)
 
         out_answer = self.instances[index].answer[0]
         out_story_len = len(self.instances[index].flat_story())
@@ -248,11 +248,9 @@ class BAbiDataset(Dataset):
         if self.pad_sequences:
             out_story = np.pad(self.instances[index].flat_story(), pad_width=(0, self.maxlen_story - out_story_len),
                                mode='constant', constant_values=0)
-            out_question = np.pad(self.instances[index].question, pad_width=(0, self.maxlen_story - out_question_len),
-                                  mode='constant', constant_values=0)
         else:
             out_story = np.array(self.instances[index].flat_story())
-            out_question = np.array(self.instances[index].question)
+
 
         return out_story, out_question, out_answer, out_story_len, out_question_len
 
