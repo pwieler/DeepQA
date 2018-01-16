@@ -183,6 +183,7 @@ if __name__ == "__main__":
     EPOCHS = 40
     LEARNING_RATE = 0.001  # 0.0001
 
+    GRID_SEARCH = False
     PLOT_LOSS = True
     PRINT_LOSS = True
 
@@ -235,23 +236,32 @@ if __name__ == "__main__":
     train_loader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     test_loader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=True)
 
-    g = GridSearch()
-    params = g.generateParamSet()
+    # If GRID_SEARCH is active generate a param-set, else the above described parameters are used!
+    grid_search_params = [(1,1)]
+    if GRID_SEARCH:
+        print('\nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\nATTENTION: Grid-Search is active!\n--> Above set of hyperparameters is overwritten!!')
+        g = GridSearch()
+        grid_search_params = g.generateParamSet()
 
-    for i, param_set in enumerate(params):
+    for i, param_set in enumerate(grid_search_params):
 
-        print('\n\nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\nParam-Set: %d of %d' % (i, len(params)))
+        # If GRID_SEARCH is active reset hyperparameter with the current param_set
+        if GRID_SEARCH:
+            print('\nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\nParam-Set: %d of %d' % (i, len(grid_search_params)))
+            ## Parameters
+            EMBED_HIDDEN_SIZE = param_set[0]
+            STORY_HIDDEN_SIZE = param_set[1]
+            QUERY_HIDDEN_SIZE = param_set[0]  # note: since we are adding the encoded query to the embedded stories,
+            #  QUERY_HIDDEN_SIZE should be equal to EMBED_HIDDEN_SIZE
 
-        ## Parameters
-        EMBED_HIDDEN_SIZE = param_set[0]
-        STORY_HIDDEN_SIZE = param_set[1]
-        QUERY_HIDDEN_SIZE = param_set[0]  # note: since we are adding the encoded query to the embedded stories,
-        #  QUERY_HIDDEN_SIZE should be equal to EMBED_HIDDEN_SIZE
-        N_LAYERS = param_set[2]
-        BATCH_SIZE = param_set[3]
-        EPOCHS = 50
+            N_LAYERS = param_set[2]
+            BATCH_SIZE = param_set[3]
+            LEARNING_RATE = param_set[4]
+        else:
+            print('\nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\nGRID-Search is deactivated, use fixed setting!')
+
+        # Determine Vocabulary_Size
         VOC_SIZE = len(voc)
-        LEARNING_RATE = param_set[4]
 
         ## Initialize Model and Optimizer
         model = QAModel(VOC_SIZE, EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, VOC_SIZE, N_LAYERS)
@@ -259,13 +269,11 @@ if __name__ == "__main__":
         criterion = nn.NLLLoss()
 
         ## Print setting
-        # print('Challenge selected: %s' % challenge.split('_')[3])
         print('\nSettings:\nEMBED_HIDDEN_SIZE: %d\nSTORY_HIDDEN_SIZE: %d\nQUERY_HIDDEN_SIZE: %d'
               '\nN_LAYERS: %d\nBATCH_SIZE: %d\nEPOCHS: %d\nVOC_SIZE: %d\nLEARNING_RATE: %f\n' % (
                   EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, EPOCHS, VOC_SIZE,
                   LEARNING_RATE))
 
-        # print(model)
         params = [EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, EPOCHS, VOC_SIZE,
                   LEARNING_RATE]
         params_str = [str(x) for x in params]
@@ -274,6 +282,7 @@ if __name__ == "__main__":
                              '\nN_LAYERS: %d\nBATCH_SIZE: %d\nEPOCHS: %d\nVOC_SIZE: %d\nLEARNING_RATE: %f\n' % (
                   EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, EPOCHS, VOC_SIZE,
                   LEARNING_RATE)
+
         ## Start training
         start = time.time()
         if PRINT_LOSS:
@@ -298,12 +307,12 @@ if __name__ == "__main__":
             test_loss_history = test_loss_history + test_loss
 
             # Add Loss to history
-            train_acc_history.append(train_accuracy)  # = train_acc_history + [train_accuracy]
-            test_acc_history.append(test_accuracy)  # = test_acc_history + test_accuracy
+            train_acc_history.append(train_accuracy)
+            test_acc_history.append(test_accuracy)
         log(BABI_TASK, train_loss_history,test_loss_history, params_str , train_acc_history, test_acc_history, params_str_to_file)
 
         # Plot Loss
-        if PLOT_LOSS:
+        if PLOT_LOSS and not GRID_SEARCH:
             plt.figure()
             plt.plot(train_loss_history, label='train-loss', color='b')
             plt.plot(test_loss_history, label='test-loss', color='r')
