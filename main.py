@@ -311,7 +311,7 @@ if __name__ == "__main__":
             test_acc_history.append(test_accuracy)
         log(BABI_TASK, train_loss_history,test_loss_history, params_str , train_acc_history, test_acc_history, params_str_to_file)
 
-        # Plot Loss
+        # Plot Loss 
         if PLOT_LOSS and not GRID_SEARCH:
             plt.figure()
             plt.plot(train_loss_history, label='train-loss', color='b')
