@@ -54,8 +54,11 @@ def train():
         if PRINT_LOSS:
             if i % 1 == 0:
                 print('[{}] Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.2f}'.format(time_since(start), epoch,
-                        i * len(stories), len(train_loader.dataset),
-                        100. * i * len(stories) / len(train_loader.dataset), loss.data[0]))
+                                                                                    i * len(stories),
+                                                                                    len(train_loader.dataset),
+                                                                                    100. * i * len(stories) / len(
+                                                                                            train_loader.dataset),
+                                                                                    loss.data[0]))
 
         pred_answers = output.data.max(1)[1]
         correct += pred_answers.eq(
@@ -101,7 +104,7 @@ def test():
 
         pred_answers = output.data.max(1)[1]
         correct += pred_answers.eq(
-            answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
+                answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
 
     accuracy = 100. * correct / test_data_size
 
@@ -135,6 +138,8 @@ class GridSearch():
 
 if __name__ == "__main__":
 
+    BABI_TASK = 1
+
     ## Parameters
     EMBED_HIDDEN_SIZE = 50
     STORY_HIDDEN_SIZE = 50
@@ -150,33 +155,33 @@ if __name__ == "__main__":
 
     ## Load data
     voc = bd.Vocabulary()
-    voc.extend_with_file("data/tasks_1-20_v1-2/en/qa1_single-supporting-fact_train.txt")
-    voc.extend_with_file("data/tasks_1-20_v1-2/en/qa2_two-supporting-facts_train.txt")
-    voc.extend_with_file("data/tasks_1-20_v1-2/en/qa3_three-supporting-facts_train.txt")
-    voc.extend_with_file("data/tasks_1-20_v1-2/en/qa6_yes-no-questions_train.txt")
+    train_instances = []
+    test_instances = []
 
-    qa1_train_instances = bd.BAbIInstance.instances_from_file(
-            "data/tasks_1-20_v1-2/en/qa1_single-supporting-fact_train.txt")
-    qa1_test_instances = bd.BAbIInstance.instances_from_file(
-            "data/tasks_1-20_v1-2/en/qa1_single-supporting-fact_test.txt")
+    if BABI_TASK is 1:
+        voc.extend_with_file("data/tasks_1-20_v1-2/en/qa1_single-supporting-fact_train.txt")
+        train_instances = bd.BAbIInstance.instances_from_file(
+                "data/tasks_1-20_v1-2/en/qa1_single-supporting-fact_train.txt")
+        test_instances = bd.BAbIInstance.instances_from_file(
+                "data/tasks_1-20_v1-2/en/qa1_single-supporting-fact_test.txt")
 
-    qa2_train_instances = bd.BAbIInstance.instances_from_file(
-            "data/tasks_1-20_v1-2/en/qa2_two-supporting-facts_train.txt")
-    qa2_test_instances = bd.BAbIInstance.instances_from_file(
-            "data/tasks_1-20_v1-2/en/qa2_two-supporting-facts_test.txt")
+    elif BABI_TASK is 2:
+        voc.extend_with_file("data/tasks_1-20_v1-2/en/qa2_two-supporting-facts_train.txt")
+        train_instances = bd.BAbIInstance.instances_from_file(
+                "data/tasks_1-20_v1-2/en/qa2_two-supporting-facts_train.txt")
+        test_instances = bd.BAbIInstance.instances_from_file(
+                "data/tasks_1-20_v1-2/en/qa2_two-supporting-facts_test.txt")
 
-    qa3_train_instances = bd.BAbIInstance.instances_from_file(
-            "data/tasks_1-20_v1-2/en/qa3_three-supporting-facts_train.txt")
-    qa3_test_instances = bd.BAbIInstance.instances_from_file(
-            "data/tasks_1-20_v1-2/en/qa3_three-supporting-facts_test.txt")
-
-    qa6_train_instances = bd.BAbIInstance.instances_from_file("data/tasks_1-20_v1-2/en/qa6_yes-no-questions_train.txt")
-    qa6_test_instances = bd.BAbIInstance.instances_from_file("data/tasks_1-20_v1-2/en/qa6_yes-no-questions_test.txt")
-
-    train_instances = qa1_train_instances + qa2_train_instances + qa3_train_instances + qa6_train_instances
-    test_instances = qa1_test_instances + qa2_test_instances + qa3_test_instances + qa6_test_instances
-
-    all_instances = train_instances + qa1_test_instances
+    elif BABI_TASK is 3:
+        voc.extend_with_file("data/tasks_1-20_v1-2/en/qa3_three-supporting-facts_train.txt")
+        train_instances = bd.BAbIInstance.instances_from_file(
+                "data/tasks_1-20_v1-2/en/qa3_three-supporting-facts_train.txt")
+        test_instances = bd.BAbIInstance.instances_from_file(
+                "data/tasks_1-20_v1-2/en/qa3_three-supporting-facts_test.txt")
+    elif BABI_TASK is 6:
+        voc.extend_with_file("data/tasks_1-20_v1-2/en/qa6_yes-no-questions_train.txt")
+        train_instances = bd.BAbIInstance.instances_from_file("data/tasks_1-20_v1-2/en/qa6_yes-no-questions_train.txt")
+        test_instances = bd.BAbIInstance.instances_from_file("data/tasks_1-20_v1-2/en/qa6_yes-no-questions_test.txt")
 
     for inst in train_instances:
         inst.vectorize(voc)
@@ -220,8 +225,8 @@ if __name__ == "__main__":
         # print('Challenge selected: %s' % challenge.split('_')[3])
         print('\nSettings:\nEMBED_HIDDEN_SIZE: %d\nSTORY_HIDDEN_SIZE: %d\nQUERY_HIDDEN_SIZE: %d'
               '\nN_LAYERS: %d\nBATCH_SIZE: %d\nEPOCHS: %d\nVOC_SIZE: %d\nLEARNING_RATE: %f\n' % (
-              EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, EPOCHS, VOC_SIZE,
-              LEARNING_RATE))
+                  EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, EPOCHS, VOC_SIZE,
+                  LEARNING_RATE))
 
         # print(model)
 
