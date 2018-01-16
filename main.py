@@ -39,9 +39,15 @@ def train():
         queries = queries[perm_idx]
         answers = answers[perm_idx]
 
+        print("Stories: " + str(stories.data.numpy()))
+        print("Queries: " + str(queries.data.numpy()))
+        print("Answers: " + str(answers.data.numpy()))
+
         output = model(stories, queries, sl, ql)
 
-        loss = criterion(output, answers.view(-1))
+        answers_flat = answers.view(-1)
+
+        loss = criterion(output, answers)
 
         total_loss += loss.data[0]
 
@@ -138,7 +144,11 @@ class GridSearch():
 
 if __name__ == "__main__":
 
+    np.set_printoptions(threshold=np.nan)
+
     BABI_TASK = 1
+
+    debug = True
 
     ## Parameters
     EMBED_HIDDEN_SIZE = 50
@@ -157,6 +167,11 @@ if __name__ == "__main__":
     voc = bd.Vocabulary()
     train_instances = []
     test_instances = []
+
+    if BABI_TASK is 0:
+        voc.extend_with_file("data/tasks_1-20_v1-2/en/test_data")
+        train_instances = bd.BAbIInstance.instances_from_file("data/tasks_1-20_v1-2/en/test_data")
+        test_instances = bd.BAbIInstance.instances_from_file("data/tasks_1-20_v1-2/en/test_data")
 
     if BABI_TASK is 1:
         voc.extend_with_file("data/tasks_1-20_v1-2/en/qa1_single-supporting-fact_train.txt")
@@ -182,6 +197,13 @@ if __name__ == "__main__":
         voc.extend_with_file("data/tasks_1-20_v1-2/en/qa6_yes-no-questions_train.txt")
         train_instances = bd.BAbIInstance.instances_from_file("data/tasks_1-20_v1-2/en/qa6_yes-no-questions_train.txt")
         test_instances = bd.BAbIInstance.instances_from_file("data/tasks_1-20_v1-2/en/qa6_yes-no-questions_test.txt")
+
+    voc.sort_ids()
+
+    print("Vocabulary used for translating words to ids: ")
+    print(str(voc) + "\n")
+
+    print(train_instances[0].__repr__())
 
     for inst in train_instances:
         inst.vectorize(voc)

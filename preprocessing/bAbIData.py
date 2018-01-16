@@ -10,7 +10,7 @@ import numpy as np
 
 
 class Vocabulary:
-    def __init__(self, file=None, vocabulary_dict=None, embedding = None):
+    def __init__(self, file=None, vocabulary_dict=None, embedding=None):
         self.voc_dict = vocabulary_dict if vocabulary_dict is not None else dict()
         self.embedding = embedding
 
@@ -21,6 +21,14 @@ class Vocabulary:
 
     def __len__(self):
         return len(self.voc_dict)
+
+    def __repr__(self):
+        rep = "Vocabulary:"
+
+        for tuple in sorted(self.voc_dict.items(), key=lambda a: a[1]):
+            rep += " " + str(tuple)
+
+        return rep
 
     def word_to_id(self, word):
         # This is a trick entry for words that are non existent.
@@ -60,6 +68,14 @@ class Vocabulary:
         for word in word_set:
             self.extend_with_word(word)
 
+    def sort_ids(self):
+        i = 1
+
+        for key in sorted(self.voc_dict.keys()):
+            if self.voc_dict[key] is not 0:
+                self.voc_dict[key] = i
+                i += 1
+
     def extend_with_lines(self, lines):
         """
         Extends this vocabulary by using the text in the list of text lines given.
@@ -87,6 +103,25 @@ class BAbIInstance:
         self.answer = []
         self.hints = []
 
+    def __repr__(self):
+        rep = "BAbIInstance:\n" + "  Story:\n"
+
+        for line in self.indexed_story:
+            rep += "    " + str(line[0]) +" " + str(line[1]) + "\n"
+
+        rep += "  Question:\n" + "    " + str(self.question) + "\n"
+        rep += "  Answer:\n" + "    " + str(self.answer) + "\n"
+
+        rep += "  Hint sentences:\n"
+
+        for line in self.hint_sentences():
+            rep += "    " + str(line[0]) +" " + str(line[1]) + "\n"
+
+        return rep
+
+
+
+
     def flat_story(self):
         flat_story = []
 
@@ -102,7 +137,12 @@ class BAbIInstance:
         return self.answer
 
     def hint_sentences(self):
-        return self.indexed_story[self.hints[0] - 1] + self.indexed_story[self.hints[1] - 1]
+        sentences = []
+
+        for hint in self.hints:
+            sentences.append(self.indexed_story[hint - 1])
+
+        return sentences
 
     def vectorize(self, voc):
         for s in self.indexed_story:
@@ -201,7 +241,7 @@ class BAbiDataset(Dataset):
         out_story = []
         out_question = []
 
-        out_answer = np.array(self.instances[index].answer)
+        out_answer = self.instances[index].answer[0]
         out_story_len = len(self.instances[index].flat_story())
         out_question_len = len(self.instances[index].question)
 
