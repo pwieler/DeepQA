@@ -164,6 +164,7 @@ def log(task, train_loss, test_loss, params, train_accuracy, test_accuracy, para
     plt.plot(test_accuracy, label='test-accuracy', color='r')
     plt.legend()
     plt.savefig(fname + "acc_history.png")
+    plt.close("all")
     with open(fname+ "params.txt", "w") as text_file:
         text_file.write(params_file)
 
