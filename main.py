@@ -139,7 +139,7 @@ class GridSearch():
         return self.params
 
 
-def log(task, train_loss, test_loss, params, train_accuracy, test_accuracy, params_file, model):
+def log(task, train_loss, test_loss, params, train_accuracy, test_accuracy, params_file, model, plots = True):
     date = str(time.strftime("%Y:%m:%d:%H:%M:%S"))
     fname = "results/" + date.replace(":", "_") + "_" + params + "_task_" + str(task) + "/"
     try:
@@ -154,17 +154,18 @@ def log(task, train_loss, test_loss, params, train_accuracy, test_accuracy, para
     te_loss.tofile(fname + "test_loss.csv", sep=";")
     tr_acc.tofile(fname + "train_accuracy.csv", sep=";")
     te_acc.tofile(fname + "test_accuracy.csv", sep=";")
-    plt.figure()
-    plt.plot(train_loss, label='train-loss', color='b')
-    plt.plot(test_loss, label='test-loss', color='r')
-    plt.legend()
-    plt.savefig(fname + "loss_history.png")
-    plt.figure()
-    plt.plot(train_accuracy, label='train-accuracy', color='b')
-    plt.plot(test_accuracy, label='test-accuracy', color='r')
-    plt.legend()
-    plt.savefig(fname + "acc_history.png")
-    plt.close("all")
+    if plots == True:
+        plt.figure()
+        plt.plot(train_loss, label='train-loss', color='b')
+        plt.plot(test_loss, label='test-loss', color='r')
+        plt.legend()
+        plt.savefig(fname + "loss_history.png")
+        plt.figure()
+        plt.plot(train_accuracy, label='train-accuracy', color='b')
+        plt.plot(test_accuracy, label='test-accuracy', color='r')
+        plt.legend()
+        plt.savefig(fname + "acc_history.png")
+        plt.close("all")
     with open(fname + "params.txt", "w") as text_file:
         text_file.write(params_file)
     torch.save(model.state_dict(), fname + "trained_model.pth")
