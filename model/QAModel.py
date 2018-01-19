@@ -14,7 +14,7 @@ class QAModel(nn.Module):
         self.voc_size = input_size
         self.embedding_size = embedding_size
         self.story_hidden_size = story_hidden_size
-        self.query_hidden_size = story_hidden_size
+        self.query_hidden_size = embedding_size
         self.n_layers = n_layers
         self.n_directions = int(bidirectional) + 1
 

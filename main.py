@@ -45,25 +45,30 @@ def main():
     PREVIOUSLY_TRAINED_MODEL = None
     ONLY_EVALUATE = False
 
-    ## Parameters
+    ## GridSearch Parameters
+    EPOCHS = [40]  # Mostly you only want on epoch param, unless you want equal models with different training times.
     EMBED_HIDDEN_SIZES = [50]
-    STORY_HIDDEN_SIZE = [50]
-
-    N_LAYERS = [4]
-    BATCH_SIZE = [32]
-    EPOCHS = 60
+    STORY_HIDDEN_SIZE = [100]
+    N_LAYERS = [1, 2]
+    BATCH_SIZE = [100]
     LEARNING_RATE = [0.001]  # 0.0001
 
-    PLOT_LOSS = True
-    PRINT_LOSS = False
+    ## Output parameters
+    # Makes the training halt between every param set until you close the plot windows. Plots are saved either way.
+    PLOT_LOSS_INTERACTIVE = False
+    PRINT_BATCHWISE_LOSS = False
 
-    grid_search_params = GridSearchParamSet(EMBED_HIDDEN_SIZES, STORY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, LEARNING_RATE)
+    grid_search_params = GridSearchParamDict(EMBED_HIDDEN_SIZES, STORY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, LEARNING_RATE,
+                                             EPOCHS)
 
-    voc, train_loader, test_loader = prepare_dataloaders(babi_voc_path[BABI_TASK], babi_train_path[BABI_TASK],
-                                                         babi_test_path[BABI_TASK], BATCH_SIZE)
+    voc, train_instances, test_instances = load_data(babi_voc_path[BABI_TASK], babi_train_path[BABI_TASK],
+                                                     babi_test_path[BABI_TASK])
+
+    # Converts the words of the instances from string representation to integer representation using the vocabulary.
+    vectorize_data(voc, train_instances, test_instances)
 
     for i, param_dict in enumerate(grid_search_params):
-        print('\nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\nParam-Set: %d of %d' % (i, len(grid_search_params)))
+        print('\nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\nParam-Set: %d of %d' % (i + 1, len(grid_search_params)))
 
         embedding_size = param_dict["embedding_size"]
         story_hidden_size = param_dict["story_hidden_size"]
@@ -71,7 +76,7 @@ def main():
         n_layers = param_dict["layers"]
         learning_rate = param_dict["learning_rate"]
         batch_size = param_dict["batch_size"]
-        epochs = EPOCHS
+        epochs = param_dict["epochs"]
         voc_len = len(voc)
 
         ## Print setting
@@ -81,6 +86,8 @@ def main():
                               voc_len, learning_rate)
 
         print(readable_params)
+
+        train_loader, test_loader = prepare_dataloaders(train_instances, test_instances, batch_size)
 
         ## Initialize Model and Optimizer
         model = QAModel(voc_len, embedding_size, story_hidden_size, voc_len, n_layers)
@@ -92,60 +99,20 @@ def main():
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
         criterion = nn.NLLLoss()
 
+        train_loss, test_loss, train_acc, test_acc = conduct_training(model, train_loader, test_loader, optimizer,
+                                                                      criterion, only_evaluate=ONLY_EVALUATE,
+                                                                      print_loss=PRINT_BATCHWISE_LOSS, epochs=epochs)
+
         params = [embedding_size, story_hidden_size, query_hidden_size, n_layers, batch_size, epochs, voc_len,
-                  learning_rate]
-        params_str = [str(x) for x in params]
-        params_str = reduce(lambda x, y: x + '_' + y, params_str)
-
-        ## Start training
-        start = time.time()
-        if PRINT_LOSS:
-            print("Training for %d epochs..." % EPOCHS)
-
-        train_loss_history = []
-        test_loss_history = []
-
-        train_acc_history = []
-        test_acc_history = []
-
-        for epoch in range(1, EPOCHS + 1):
-            print("Epoche: %d" % epoch)
-            # Train cycle
-            if not ONLY_EVALUATE:
-                train_loss, train_accuracy, total_loss = train(model, train_loader, optimizer, criterion, start, epoch,
-                                                               PRINT_LOSS)
-
-            # Test cycle
-            test_loss, test_accuracy = test(model, test_loader, criterion, PRINT_LOSS=False)
-
-            # Add Loss to history
-            if not ONLY_EVALUATE:
-                train_loss_history = train_loss_history + train_loss
-            test_loss_history = test_loss_history + test_loss
-
-            # Add Loss to history
-            if not ONLY_EVALUATE:
-                train_acc_history.append(train_accuracy)
-            test_acc_history.append(test_accuracy)
-        log(BABI_TASK, train_loss_history, test_loss_history, params_str, train_acc_history, test_acc_history,
-            readable_params, model)
+                  learning_rate, epochs]
+        log(BABI_TASK, train_loss, test_loss, params, train_acc, test_acc, readable_params, model)
 
         # Plot Loss
-        if PLOT_LOSS:
-            plt.figure()
-            plt.plot(train_loss_history, label='train-loss', color='b')
-            plt.plot(test_loss_history, label='test-loss', color='r')
-            plt.legend()
-            plt.show()
-
-            plt.figure()
-            plt.plot(train_acc_history, label='train-accuracy', color='b')
-            plt.plot(test_acc_history, label='test-accuracy', color='r')
-            plt.legend()
-            plt.show()  # Train cycle
+        if PLOT_LOSS_INTERACTIVE:
+            plot_data_in_window(train_loss, test_loss, train_acc, test_acc)
 
 
-def train(model, train_loader, optimizer, criterion, start, epoch, PRINT_LOSS=False):
+def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=False):
     total_loss = 0
     correct = 0
     train_loss_history = []
@@ -188,7 +155,7 @@ def train(model, train_loader, optimizer, criterion, start, epoch, PRINT_LOSS=Fa
         loss.backward()
         optimizer.step()
 
-        if PRINT_LOSS:
+        if print_loss:
             if i % 1 == 0:
                 print('[{}] Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.2f}'.format(time_since(start), epoch,
                                                                                     i * len(stories),
@@ -250,42 +217,25 @@ def test(model, test_loader, criterion, PRINT_LOSS=False):
     return test_loss_history, accuracy
 
 
-def prepare_dataloaders(voc_path, train_path, test_path, batch_size, shuffle=True):
-    voc = bd.Vocabulary()
-    train_instances = []
-    test_instances = []
-
-    voc.extend_with_file(voc_path)
-    train_instances = bd.BAbIInstance.instances_from_file(train_path)
-    test_instances = bd.BAbIInstance.instances_from_file(test_path)
-
-    voc.sort_ids()
-
-    # At this point, training instances have been loaded with real word sentences.
-    # Using the vocabulary we convert the words into integer representations, so they can converted with an embedding
-    # later on.
-    for inst in train_instances:
-        inst.vectorize(voc)
-
-    for inst in test_instances:
-        inst.vectorize(voc)
-
+def prepare_dataloaders(train_instances, test_instances, batch_size, shuffle=True):
     train_dataset = bd.BAbiDataset(train_instances)
     test_dataset = bd.BAbiDataset(test_instances)
 
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=True)
 
-    return voc, train_loader, test_loader
+    return train_loader, test_loader
 
 
-class GridSearchParamSet():
-    def __init__(self, embeddings, story_hidden_sizes, layers, batch_sizes, learning_rates):
+class GridSearchParamDict():
+    def __init__(self, embeddings, story_hidden_sizes, layers, batch_sizes, learning_rates, epochs):
         self.embeddings = embeddings
         self.story_hiddens = story_hidden_sizes
         self.layers = layers
         self.batch_sizes = batch_sizes
         self.learning_rates = learning_rates
+        self.epochs = epochs
+
         self.params = self.generate_param_set()
 
     def __len__(self):
@@ -301,21 +251,107 @@ class GridSearchParamSet():
             for lr in self.learning_rates:
                 for l in self.layers:
                     for s in self.story_hiddens:
-                        for e in self.embeddings:
-                            self.params.append({
-                                "embedding_size":    e,
-                                "story_hidden_size": s,
-                                "layers":            l,
-                                "batch_size":        b,
-                                "learning_rate":     lr
-                                })
+                        for em in self.embeddings:
+                            for ep in self.epochs:
+                                self.params.append({
+                                    "embedding_size":    em,
+                                    "story_hidden_size": s,
+                                    "layers":            l,
+                                    "batch_size":        b,
+                                    "learning_rate":     lr,
+                                    "epochs":            ep
+                                    })
 
         return self.params
 
 
+def load_data(voc_path, train_path, test_path):
+    voc = bd.Vocabulary()
+    train_instances = []
+    test_instances = []
+
+    voc.extend_with_file(voc_path)
+    train_instances = bd.BAbIInstance.instances_from_file(train_path)
+    test_instances = bd.BAbIInstance.instances_from_file(test_path)
+
+    voc.sort_ids()
+
+    return voc, train_instances, test_instances
+
+
+def vectorize_data(voc, train_instances, test_instances):
+    # At this point, training instances have been loaded with real word sentences.
+    # Using the vocabulary we convert the words into integer representations, so they can converted with an embedding
+    # later on.
+    for inst in train_instances:
+        inst.vectorize(voc)
+
+    for inst in test_instances:
+        inst.vectorize(voc)
+
+
+def conduct_training(model, train_loader, test_loader, optimizer, criterion, only_evaluate=False, print_loss=False,
+                     epochs=1):
+    train_loss_history = []
+    test_loss_history = []
+
+    train_acc_history = []
+    test_acc_history = []
+
+    ## Start training
+    start = time.time()
+    if print_loss:
+        print("Training for %d epochs..." % epochs)
+
+    for epoch in range(1, epochs + 1):
+        print("Epoche: %d" % epoch)
+        # Train cycle
+        if not only_evaluate:
+            train_loss, train_accuracy, total_loss = train(model, train_loader, optimizer, criterion, start, epoch,
+                                                           print_loss)
+
+        # Test cycle
+        test_loss, test_accuracy = test(model, test_loader, criterion, PRINT_LOSS=False)
+
+        # Add Loss to history
+        if not only_evaluate:
+            train_loss_history = train_loss_history + train_loss
+        test_loss_history = test_loss_history + test_loss
+
+        # Add Loss to history
+        if not only_evaluate:
+            train_acc_history.append(train_accuracy)
+        test_acc_history.append(test_accuracy)
+
+    return train_loss_history, test_loss_history, train_acc_history, test_acc_history
+
+
+def plot_data_in_window(train_loss, test_loss, train_acc, test_acc):
+    plt.figure()
+    plt.plot(train_loss, label='train-loss', color='b')
+    plt.plot(test_loss, label='test-loss', color='r')
+    plt.legend()
+    plt.show()
+
+    plt.figure()
+    plt.plot(train_acc, label='train-accuracy', color='b')
+    plt.plot(test_acc, label='test-accuracy', color='r')
+    plt.legend()
+    plt.show()  # Train cycle
+
+
+def concatenated_params(params):
+    params_str = [str(x) for x in params]
+    params_str = reduce(lambda x, y: x + '_' + y, params_str)
+
+    return params_str
+
+
 def log(task, train_loss, test_loss, params, train_accuracy, test_accuracy, params_file, model, plots=True):
+    param_str = concatenated_params(params)
+
     date = str(time.strftime("%Y:%m:%d:%H:%M:%S"))
-    fname = "results/" + date.replace(":", "_") + "_" + params + "_task_" + str(task) + "/"
+    fname = "results/" + date.replace(":", "_") + "_" + param_str + "_task_" + str(task) + "/"
     try:
         os.stat(fname)
     except:
