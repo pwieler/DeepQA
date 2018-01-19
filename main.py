@@ -18,6 +18,8 @@ def main():
     # Can be either 1,2,3 or 6 respective to the evaluated task.
     BABI_TASK = 1
 
+    print('Training for task: %d'%BABI_TASK)
+
     base_path = "data/tasks_1-20_v1-2/shuffled"
 
     babi_voc_path = {

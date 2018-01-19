@@ -95,7 +95,7 @@ class QAModel(nn.Module):
         # Combine story-embeddings with question_code
         combined = s_e + question_code
 
-        # put combined tensor into story_rnn --> attention-mechansism through question_code
+        # put combined tensor into story_rnn --> attention-mechanism through question_code
         packed_story = torch.nn.utils.rnn.pack_padded_sequence(combined, story_lengths.data.cpu().numpy(),
                                                                batch_first=True)  # pack story
         story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
