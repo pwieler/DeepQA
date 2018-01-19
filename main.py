@@ -149,7 +149,7 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=Fa
         total_loss += loss.data[0]
 
         # Calculating elementwise loss per batch
-        train_loss_history.append(loss.data[0] / answers.data.shape[0])
+        train_loss_history.append(loss.data[0])
 
         model.zero_grad()
         loss.backward()
@@ -206,7 +206,7 @@ def test(model, test_loader, criterion, PRINT_LOSS=False):
         loss = criterion(output, answers.view(-1))
 
         # Calculating elementwise loss  per batch
-        test_loss_history.append(loss.data[0] / answers.data.shape[0])
+        test_loss_history.append(loss.data[0])
 
         pred_answers = output.data.max(1)[1]
         correct += pred_answers.eq(
