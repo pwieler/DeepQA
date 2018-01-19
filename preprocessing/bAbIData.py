@@ -107,7 +107,7 @@ class BAbIInstance:
         rep = "BAbIInstance:\n" + "  Story:\n"
 
         for line in self.indexed_story:
-            rep += "    " + str(line[0]) +" " + str(line[1]) + "\n"
+            rep += "    " + str(line[0]) + " " + str(line[1]) + "\n"
 
         rep += "  Question:\n" + "    " + str(self.question) + "\n"
         rep += "  Answer:\n" + "    " + str(self.answer) + "\n"
@@ -115,12 +115,9 @@ class BAbIInstance:
         rep += "  Hint sentences:\n"
 
         for line in self.hint_sentences():
-            rep += "    " + str(line[0]) +" " + str(line[1]) + "\n"
+            rep += "    " + str(line[0]) + " " + str(line[1]) + "\n"
 
         return rep
-
-
-
 
     def flat_story(self):
         flat_story = []
@@ -238,7 +235,6 @@ class BAbiDataset(Dataset):
         self.maxlen_question = max([len(inst.question) for inst in instances])
 
     def __getitem__(self, index):
-        out_story = []
         out_question = np.array(self.instances[index].question)
 
         out_answer = self.instances[index].answer[0]
@@ -250,7 +246,6 @@ class BAbiDataset(Dataset):
                                mode='constant', constant_values=0)
         else:
             out_story = np.array(self.instances[index].flat_story())
-
 
         return out_story, out_question, out_answer, out_story_len, out_question_len
 

@@ -7,32 +7,32 @@ import numpy as np
 
 
 class QAModel(nn.Module):
-    def __init__(self, input_size, embedding_size, story_hidden_size, query_hidden_size, output_size, n_layers=1,
-                 bidirectional=False, custom_embedding=None):
+    def __init__(self, input_size, embedding_size, story_hidden_size, output_size, n_layers=1, bidirectional=False,
+                 custom_embedding=None):
         super(QAModel, self).__init__()
 
         self.voc_size = input_size
         self.embedding_size = embedding_size
         self.story_hidden_size = story_hidden_size
-        self.query_hidden_size = query_hidden_size
+        self.query_hidden_size = story_hidden_size
         self.n_layers = n_layers
         self.n_directions = int(bidirectional) + 1
 
         # Embedding bildet ab von Vokabular (Indize) auf n-dim Raum
-        self.story_embedding = custom_embedding if custom_embedding is not None else nn.Embedding(input_size,
-                                                                                                  embedding_size)
+        self.story_embedding = custom_embedding if custom_embedding is not None else nn.Embedding(self.voc_size,
+                                                                                                  self.embedding_size)
 
-        self.story_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers, bidirectional=bidirectional,
+        self.story_rnn = nn.GRU(self.embedding_size, self.story_hidden_size, self.n_layers, bidirectional=bidirectional,
                                 batch_first=True, dropout=0.3)
 
-        self.query_embedding = custom_embedding if custom_embedding is not None else nn.Embedding(input_size,
-                                                                                                  embedding_size)
+        self.query_embedding = custom_embedding if custom_embedding is not None else nn.Embedding(self.voc_size,
+                                                                                                  self.embedding_size)
 
-        self.query_rnn = nn.GRU(embedding_size, query_hidden_size, n_layers, bidirectional=bidirectional,
+        self.query_rnn = nn.GRU(self.embedding_size, self.query_hidden_size, self.n_layers, bidirectional=bidirectional,
                                 batch_first=True, dropout=0.3)
 
         # info: if we use the old-forward function fc-layer has input-length: "story_hidden_size+query_hidden_size"
-        self.fc = nn.Linear(story_hidden_size, output_size)
+        self.fc = nn.Linear(self.story_hidden_size, self.voc_size)
         self.softmax = nn.LogSoftmax()
 
     # this is the old forward version! below version with question_code performs much better!!
@@ -110,5 +110,3 @@ class QAModel(nn.Module):
     def _init_hidden(self, batch_size, hidden_size):
         hidden = torch.zeros(self.n_layers * self.n_directions, batch_size, hidden_size)
         return Variable(hidden)
-
-
