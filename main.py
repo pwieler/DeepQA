@@ -57,7 +57,7 @@ def main():
 
     ## Output parameters
     # Makes the training halt between every param set until you close the plot windows. Plots are saved either way.
-    PLOT_LOSS_INTERACTIVE = True
+    PLOT_LOSS_INTERACTIVE = False
     PRINT_BATCHWISE_LOSS = False
 
     grid_search_params = GridSearchParamDict(EMBED_HIDDEN_SIZES, STORY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, LEARNING_RATE,
@@ -333,7 +333,7 @@ def plot_data_in_window(train_loss, test_loss, train_acc, test_acc):
     plt.plot(train_loss, label='train-loss', color='b')
     plt.plot(test_loss, label='test-loss', color='r')
     plt.xlabel("Batch")
-    plt.ylabel("Elementwise Loss per Batch")
+    plt.ylabel("Average Elementwise Loss per Batch")
     plt.legend()
     plt.show()
 
@@ -376,7 +376,7 @@ def save_results(task, train_loss, test_loss, params, train_accuracy, test_accur
         plt.plot(train_loss, label='train-loss', color='b')
         plt.plot(test_loss, label='test-loss', color='r')
         plt.xlabel("Batch")
-        plt.ylabel("Elementwise Loss per Batch")
+        plt.ylabel("Average Elementwise Loss per Batch")
         plt.legend()
         plt.savefig(fname + "loss_history.png")
         plt.figure()
