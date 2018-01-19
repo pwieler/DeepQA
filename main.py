@@ -1,6 +1,6 @@
 from __future__ import print_function
 from functools import reduce
-import re
+import pickle
 import numpy as np
 import preprocessing.bAbIData as bd
 import matplotlib.pyplot as plt
@@ -18,44 +18,46 @@ def main():
     # Can be either 1,2,3 or 6 respective to the evaluated task.
     BABI_TASK = 1
 
+    base_path = "data/tasks_1-20_v1-2/shuffled"
+
     babi_voc_path = {
         0: "data/tasks_1-20_v1-2/en/test_data",
-        1: "data/tasks_1-20_v1-2/en/qa1_single-supporting-fact_train.txt",
-        2: "data/tasks_1-20_v1-2/en/qa2_two-supporting-facts_train.txt",
-        3: "data/tasks_1-20_v1-2/en/qa3_three-supporting-facts_train.txt",
-        6: "data/tasks_1-20_v1-2/en/qa6_yes-no-questions_train.txt"
+        1: base_path + "/" + "qa1_single-supporting-fact_train.txt",
+        2: base_path + "/" + "qa2_two-supporting-facts_train.txt",
+        3: base_path + "/" + "qa3_three-supporting-facts_train.txt",
+        6: base_path + "/" + "qa6_yes-no-questions_train.txt"
         }
 
     babi_train_path = {
         0: "data/tasks_1-20_v1-2/en/test_data",
-        1: "data/tasks_1-20_v1-2/en/qa1_single-supporting-fact_train.txt",
-        2: "data/tasks_1-20_v1-2/en/qa2_two-supporting-facts_train.txt",
-        3: "data/tasks_1-20_v1-2/en/qa3_three-supporting-facts_train.txt",
-        6: "data/tasks_1-20_v1-2/en/qa6_yes-no-questions_train.txt"
+        1: base_path + "/" + "qa1_single-supporting-fact_train.txt",
+        2: base_path + "/" + "qa2_two-supporting-facts_train.txt",
+        3: base_path + "/" + "qa3_three-supporting-facts_train.txt",
+        6: base_path + "/" + "qa6_yes-no-questions_train.txt"
         }
 
     babi_test_path = {
         0: "data/tasks_1-20_v1-2/en/test_data",
-        1: "data/tasks_1-20_v1-2/en/qa1_single-supporting-fact_test.txt",
-        2: "data/tasks_1-20_v1-2/en/qa2_two-supporting-facts_test.txt",
-        3: "data/tasks_1-20_v1-2/en/qa3_three-supporting-facts_test.txt",
-        6: "data/tasks_1-20_v1-2/en/qa6_yes-no-questions_test.txt"
+        1: base_path + "/" + "qa1_single-supporting-fact_test.txt",
+        2: base_path + "/" + "qa2_two-supporting-facts_test.txt",
+        3: base_path + "/" + "qa3_three-supporting-facts_test.txt",
+        6: base_path + "/" + "qa6_yes-no-questions_test.txt"
         }
 
     PREVIOUSLY_TRAINED_MODEL = None
     ONLY_EVALUATE = False
 
     ## GridSearch Parameters
-    EPOCHS = [40]  # Mostly you only want on epoch param, unless you want equal models with different training times.
+    EPOCHS = [40]  # Mostly you only want one epoch param, unless you want equal models with different training times.
     EMBED_HIDDEN_SIZES = [50]
     STORY_HIDDEN_SIZE = [100]
-    N_LAYERS = [1, 2]
-    BATCH_SIZE = [100]
+    N_LAYERS = [1]
+    BATCH_SIZE = [16]
     LEARNING_RATE = [0.001]  # 0.0001
 
     ## Output parameters
     # Makes the training halt between every param set until you close the plot windows. Plots are saved either way.
-    PLOT_LOSS_INTERACTIVE = False
+    PLOT_LOSS_INTERACTIVE = True
     PRINT_BATCHWISE_LOSS = False
 
     grid_search_params = GridSearchParamDict(EMBED_HIDDEN_SIZES, STORY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, LEARNING_RATE,
@@ -72,7 +74,6 @@ def main():
 
         embedding_size = param_dict["embedding_size"]
         story_hidden_size = param_dict["story_hidden_size"]
-        query_hidden_size = story_hidden_size
         n_layers = param_dict["layers"]
         learning_rate = param_dict["learning_rate"]
         batch_size = param_dict["batch_size"]
@@ -80,10 +81,9 @@ def main():
         voc_len = len(voc)
 
         ## Print setting
-        readable_params = '\nSettings:\nEMBED_HIDDEN_SIZE: %d\nSTORY_HIDDEN_SIZE: %d\nQUERY_HIDDEN_SIZE: %d' \
-                          '\nN_LAYERS: %d\nBATCH_SIZE: %d\nEPOCHS: %d\nVOC_SIZE: %d\nLEARNING_RATE: %f\n' % (
-                              embedding_size, story_hidden_size, query_hidden_size, n_layers, batch_size, epochs,
-                              voc_len, learning_rate)
+        readable_params = '\nSettings:\nEMBED_HIDDEN_SIZE: %d\nSTORY_HIDDEN_SIZE: %d\nN_LAYERS: %d\nBATCH_SIZE: ' \
+                          '%d\nEPOCHS: %d\nVOC_SIZE: %d\nLEARNING_RATE: %f\n' % (
+                              embedding_size, story_hidden_size, n_layers, batch_size, epochs, voc_len, learning_rate)
 
         print(readable_params)
 
@@ -103,9 +103,8 @@ def main():
                                                                       criterion, only_evaluate=ONLY_EVALUATE,
                                                                       print_loss=PRINT_BATCHWISE_LOSS, epochs=epochs)
 
-        params = [embedding_size, story_hidden_size, query_hidden_size, n_layers, batch_size, epochs, voc_len,
-                  learning_rate, epochs]
-        log(BABI_TASK, train_loss, test_loss, params, train_acc, test_acc, readable_params, model)
+        params = [embedding_size, story_hidden_size, n_layers, batch_size, epochs, voc_len, learning_rate, epochs]
+        save_results(BABI_TASK, train_loss, test_loss, params, train_acc, test_acc, readable_params, model, voc)
 
         # Plot Loss
         if PLOT_LOSS_INTERACTIVE:
@@ -149,7 +148,8 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=Fa
 
         total_loss += loss.data[0]
 
-        train_loss_history.append(loss.data[0])
+        # Calculating elementwise loss per batch
+        train_loss_history.append(loss.data[0] / answers.data.shape[0])
 
         model.zero_grad()
         loss.backward()
@@ -204,7 +204,9 @@ def test(model, test_loader, criterion, PRINT_LOSS=False):
         output = model(stories, queries, sl, ql)
 
         loss = criterion(output, answers.view(-1))
-        test_loss_history.append(loss.data[0])
+
+        # Calculating elementwise loss  per batch
+        test_loss_history.append(loss.data[0] / answers.data.shape[0])
 
         pred_answers = output.data.max(1)[1]
         correct += pred_answers.eq(
@@ -330,12 +332,16 @@ def plot_data_in_window(train_loss, test_loss, train_acc, test_acc):
     plt.figure()
     plt.plot(train_loss, label='train-loss', color='b')
     plt.plot(test_loss, label='test-loss', color='r')
+    plt.xlabel("Batch")
+    plt.ylabel("Elementwise Loss per Batch")
     plt.legend()
     plt.show()
 
     plt.figure()
     plt.plot(train_acc, label='train-accuracy', color='b')
     plt.plot(test_acc, label='test-accuracy', color='r')
+    plt.xlabel("Epoch")
+    plt.ylabel("Correct answers in %")
     plt.legend()
     plt.show()  # Train cycle
 
@@ -347,7 +353,8 @@ def concatenated_params(params):
     return params_str
 
 
-def log(task, train_loss, test_loss, params, train_accuracy, test_accuracy, params_file, model, plots=True):
+def save_results(task, train_loss, test_loss, params, train_accuracy, test_accuracy, params_file, model, voc,
+                 plots=True):
     param_str = concatenated_params(params)
 
     date = str(time.strftime("%Y:%m:%d:%H:%M:%S"))
@@ -368,17 +375,23 @@ def log(task, train_loss, test_loss, params, train_accuracy, test_accuracy, para
         plt.figure()
         plt.plot(train_loss, label='train-loss', color='b')
         plt.plot(test_loss, label='test-loss', color='r')
+        plt.xlabel("Batch")
+        plt.ylabel("Elementwise Loss per Batch")
         plt.legend()
         plt.savefig(fname + "loss_history.png")
         plt.figure()
         plt.plot(train_accuracy, label='train-accuracy', color='b')
         plt.plot(test_accuracy, label='test-accuracy', color='r')
+        plt.xlabel("Epoch")
+        plt.ylabel("Correct answers in %")
         plt.legend()
         plt.savefig(fname + "acc_history.png")
         plt.close("all")
     with open(fname + "params.txt", "w") as text_file:
         text_file.write(params_file)
+
     torch.save(model.state_dict(), fname + "trained_model.pth")
+    pickle.dump(voc.voc_dict, open(fname + "vocabulary.pkl", "wb"))
 
 
 if __name__ == "__main__":
