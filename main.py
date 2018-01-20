@@ -1,20 +1,28 @@
 from __future__ import print_function
-from functools import reduce
+
+import os
 import pickle
-import numpy as np
-import preprocessing.bAbIData as bd
+import sys
+import time
+from functools import reduce
+
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
+from torch.utils.data import DataLoader
+
+import preprocessing.bAbIData as bd
 from model.QAModel import QAModel
 from utils.utils import time_since
-import time
-import os
 
 
 def main():
+    # Some old PY 2.6 hacks to include the dirs
+    sys.path.insert(0, 'model/')
+    sys.path.insert(0, 'preprocessing/')
+    sys.path.insert(0, 'utils/')
     # Can be either 1,2,3 or 6 respective to the evaluated task.
     BABI_TASK = 1
 

@@ -1,12 +1,15 @@
 from __future__ import print_function
+
+import numpy as np
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 import torch.nn.init as init
-import numpy as np
 
 
 class QAFFModel(nn.Module):
+    """
+        This model is just to visualize how bad the ff network performs on the task(simple benchmark). Do not use in practice. 
+    """
     # This modell overfits greatly! Not suitable for the problem, but good to illustrate why we use the RNN!
     def __init__(self, input_size, embedding_size, story_hidden_size, query_hidden_size, output_size, n_layers=1,
                  bidirectional=False, s_len=-1, q_len=-1, custom_embedding=None):
