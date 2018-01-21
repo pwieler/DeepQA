@@ -34,22 +34,18 @@ In order to train a network on multiple tasks simultaneously, the branch `multip
 ## Project Structure
 ```
 .
-├── DeepQA.py
-├── embedding.tensor
-├── main.py | *Solves the bAbI QA tasks*
-├── model | *Contains various RNN implementations to solve the bAbI tasks*
+├── main.py | *Solves the bAbI QA tasks, parameter are to be set at the begin of main(). Uses QAModel by default.*
+├── model | *Contains various RNN implementations for solving the bAbI tasks*
 │   ├── QAFFModel.py
 │   ├── QAModelLSTM.py
-│   ├── QAModel.py
+│   ├── QAModel.py | Default RNN implementation using an attention mechanism by combining question and story.
 │   ├── SentenceModel.py
 │   └── Word2VecEmbedding.py
-├── preprocessing | *Contains preprocessing methods to tokenize the bAbI Tasks and interpret them to provide them in a usable way to a PyTorch DataLoader.*
+├── preprocessing | *Contains preprocessing methods to tokenize the bAbI Tasks and interpret them to provide them as a PyTorch Dataset to a PyTorch DataLoader.*
 │   └── bAbIData.py
 ├── README.md
-├── results | *Default log path*
+├── results | *Default folder for logging and results as well as trained networks.*
 │   └── tmp
-├── todor.py  
-├── utils | *Util methods*
-│   └── utils.py
-└── vocabulary.pickle
+└── utils
+    └── utils.py
 ```
