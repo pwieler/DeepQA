@@ -1,4 +1,5 @@
-from typing import List
+# Removed for py2 compability
+# from typing import List
 import re
 import torch
 import torch.autograd as autograd
@@ -208,7 +209,7 @@ class BAbIInstance:
         # First trim index
         indexed_lines = []
         for line in lines:
-            splitter = line.split(maxsplit=1)
+            splitter = line.split(None ,1)
             indexed_lines.append([int(splitter[0]), splitter[1]])
 
         for line in indexed_lines:
