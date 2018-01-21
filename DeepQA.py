@@ -7,9 +7,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
-from preprocessing.preprocessing import time_since, get_stories, vectorize_stories
+from preprocessing.preprocessing import time_since, generate_data, vectorize_stories
 
-
+## Dataset for QA-Data
 class QADataset(Dataset):
 
     def __init__(self, story, query, answer, story_lengths, query_lengths, facts_lengths):
@@ -151,9 +151,7 @@ class SentenceModel(nn.Module):
         return Variable(hidden)
 
 
-
-
-# Train cycle
+# Train-Cycle
 def train():
     total_loss = 0
     correct = 0
@@ -258,106 +256,116 @@ def test():
     return test_loss_history, accuracy
 
 
-## Load data
-data_path = "data/"
-challenge = 'tasks_1-20_v1-2/en/qa2_two-supporting-facts_{}.txt'
+if __name__ == "__main__":
 
-train_data = get_stories(open(data_path + challenge.format('train'), 'r'), max_length=20)
-test_data = get_stories(open(data_path + challenge.format('test'), 'r'), max_length=20)
+    ## Load data
+    data_path = "data/"
+    challenge = 'tasks_1-20_v1-2/en/qa2_two-supporting-facts_{}.txt'
 
-## Preprocess data
-vocab = set()
-flatten = lambda data: reduce(lambda x, y: x + y, data)
-for story, q, answer in train_data + test_data:
-    vocab |= set(flatten(story) + q + [answer])
-vocab = sorted(vocab)
+    # Max-Length = 20 means that we only consider the last 20 facts!
+    train_data = generate_data(open(data_path + challenge.format('train'), 'r'), max_length=20)
+    test_data = generate_data(open(data_path + challenge.format('test'), 'r'), max_length=20)
 
 
-# Vocabluary Size
-vocab_size = len(vocab) + 1
-# Creates Dictionary
-word_idx = dict((c, i + 1) for i, c in enumerate(vocab))
+    ## Generate Vocabulary
+    vocabulary = set()
+    flatten = lambda data: reduce(lambda x, y: x + y, data)
+    for story, q, answer in train_data + test_data:
+        vocabulary |= set(flatten(story) + q + [answer])
+    vocabulary = sorted(vocabulary)
 
-# Max Length of Story and Query
-story_maxlen = max(map(len, (x for x, _, _ in train_data + test_data)))
-query_maxlen = max(map(len, (x for _, x, _ in train_data + test_data)))
-fact_maxlen = 7
-
-## Parameters
-EMBED_HIDDEN_SIZE = 50
-STORY_HIDDEN_SIZE = 50
-QUERY_HIDDEN_SIZE = 50
-# note: since we are adding the encoded query to the embedded stories,
-#  QUERY_HIDDEN_SIZE should be equal to EMBED_HIDDEN_SIZE
-
-N_LAYERS = 1
-BATCH_SIZE = 32
-EPOCHS = 100
-VOC_SIZE = vocab_size
-LEARNING_RATE = 0.001
-
-print('\nSettings:\nEMBED_HIDDEN_SIZE: %d\nSTORY_HIDDEN_SIZE: %d\nQUERY_HIDDEN_SIZE: %d'
-      '\nN_LAYERS: %d\nBATCH_SIZE: %d\nEPOCHS: %d\nVOC_SIZE: %d\nLEARNING_RATE: %f\n\n'
-      %(EMBED_HIDDEN_SIZE,STORY_HIDDEN_SIZE,QUERY_HIDDEN_SIZE,N_LAYERS,BATCH_SIZE,EPOCHS,VOC_SIZE,LEARNING_RATE))
-
-PLOT_LOSS = True
-PRINT_LOSS = True
-
-## Create Test & Train-Data
-x, xq, y, xl, xql, facts_lengths = vectorize_stories(train_data, word_idx, story_maxlen, query_maxlen, fact_maxlen)  # x: story, xq: query, y: answer, xl: story_lengths, xql: query_lengths
-tx, txq, ty, txl, txql, t_facts_lengths = vectorize_stories(test_data, word_idx, story_maxlen, query_maxlen, fact_maxlen) # same naming but for test_data
-
-train_dataset = QADataset(x,xq,y,xl,xql,facts_lengths)
-train_loader = DataLoader(dataset=train_dataset,batch_size=BATCH_SIZE, shuffle=True)
-
-test_dataset = QADataset(tx,txq,ty,txl,txql,t_facts_lengths)
-test_loader = DataLoader(dataset=test_dataset,batch_size=BATCH_SIZE, shuffle=True)
+    # Vocabluary Size
+    voc_size = len(vocabulary) + 1
 
 
-## Initialize Model and Optimizer
-model = SentenceModel(VOC_SIZE, EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, VOC_SIZE, N_LAYERS)
-criterion = nn.NLLLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    ## Generate Dictionary
+    dictionary = dict((c, i + 1) for i, c in enumerate(vocabulary))
 
-print(model)
+    # Maximum length of story, query and facts:
+    story_maxlen = max(map(len, (x for x, _, _ in train_data + test_data)))
+    query_maxlen = max(map(len, (x for _, x, _ in train_data + test_data)))
+    fact_maxlen = 7
 
 
-## Start training
-start = time.time()
-if PRINT_LOSS:
-    print("Training for %d epochs..." % EPOCHS)
+    ## Parameters
+    EMBED_HIDDEN_SIZE = 50
+    STORY_HIDDEN_SIZE = 50
+    QUERY_HIDDEN_SIZE = 50
+    # note: since we are adding the encoded query to the embedded stories,
+    #  QUERY_HIDDEN_SIZE should be equal to EMBED_HIDDEN_SIZE
 
-train_loss_history = []
-test_loss_history = []
+    N_LAYERS = 1
+    BATCH_SIZE = 32
+    EPOCHS = 100
+    VOC_SIZE = voc_size
+    LEARNING_RATE = 0.001
 
-train_acc_history = []
-test_acc_history = []
+    print('\nSettings:\nEMBED_HIDDEN_SIZE: %d\nSTORY_HIDDEN_SIZE: %d\nQUERY_HIDDEN_SIZE: %d'
+          '\nN_LAYERS: %d\nBATCH_SIZE: %d\nEPOCHS: %d\nVOC_SIZE: %d\nLEARNING_RATE: %f\n\n'
+          %(EMBED_HIDDEN_SIZE,STORY_HIDDEN_SIZE,QUERY_HIDDEN_SIZE,N_LAYERS,BATCH_SIZE,EPOCHS,VOC_SIZE,LEARNING_RATE))
 
-for epoch in range(1, EPOCHS + 1):
+    PLOT_LOSS = True
+    PRINT_LOSS = True
 
-    print("Epoche: %d" %epoch)
-    # Train cycle
-    train_loss, train_accuracy, total_loss = train()
 
-    # Test cycle
-    test_loss, test_accuracy = test()
+    ## Create Test & Train-Data
+    train_stories, train_queries, train_answers, train_story_lengths, train_query_lengths, train_facts_lengths = \
+        vectorize_stories(train_data, dictionary, story_maxlen, query_maxlen, fact_maxlen)
 
-    # Add Loss to history
-    train_loss_history = train_loss_history+train_loss
-    test_loss_history = test_loss_history+test_loss
+    test_stories, test_queries, test_answers, test_story_lengths, test_query_lengths, test_facts_lengths = \
+        vectorize_stories(test_data, dictionary, story_maxlen, query_maxlen, fact_maxlen) # same naming but for test_data
 
-    # Add Loss to history
-    train_acc_history.append(train_accuracy)
-    test_acc_history.append(test_accuracy)
+    train_dataset = QADataset(train_stories, train_queries, train_answers, train_story_lengths, train_query_lengths, train_facts_lengths)
+    train_loader = DataLoader(dataset=train_dataset,batch_size=BATCH_SIZE, shuffle=True)
 
-# Plot Loss
-if PLOT_LOSS:
-    plt.figure()
-    plt.plot(train_loss_history,'b')
-    plt.plot(test_loss_history,'r')
-    plt.show()
+    test_dataset = QADataset(test_stories, test_queries, test_answers, test_story_lengths, test_query_lengths, test_facts_lengths)
+    test_loader = DataLoader(dataset=test_dataset,batch_size=BATCH_SIZE, shuffle=True)
 
-    plt.figure()
-    plt.plot(train_acc_history,'b')
-    plt.plot(test_acc_history,'r')
-    plt.show()
+
+    ## Initialize Model and Optimizer
+    model = SentenceModel(VOC_SIZE, EMBED_HIDDEN_SIZE, STORY_HIDDEN_SIZE, QUERY_HIDDEN_SIZE, VOC_SIZE, N_LAYERS)
+    criterion = nn.NLLLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+
+    print(model)
+
+
+    ## Start training
+    start = time.time()
+    if PRINT_LOSS:
+        print("Training for %d epochs..." % EPOCHS)
+
+    train_loss_history = []
+    test_loss_history = []
+
+    train_acc_history = []
+    test_acc_history = []
+
+    for epoch in range(1, EPOCHS + 1):
+
+        print("Epoche: %d" %epoch)
+        # Train cycle
+        train_loss, train_accuracy, total_loss = train()
+
+        # Test cycle
+        test_loss, test_accuracy = test()
+
+        # Add Loss to history
+        train_loss_history = train_loss_history+train_loss
+        test_loss_history = test_loss_history+test_loss
+
+        # Add Loss to history
+        train_acc_history.append(train_accuracy)
+        test_acc_history.append(test_accuracy)
+
+    # Plot Loss
+    if PLOT_LOSS:
+        plt.figure()
+        plt.plot(train_loss_history,'b')
+        plt.plot(test_loss_history,'r')
+        plt.show()
+
+        plt.figure()
+        plt.plot(train_acc_history,'b')
+        plt.plot(test_acc_history,'r')
+        plt.show()

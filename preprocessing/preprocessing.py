@@ -112,7 +112,7 @@ def parse_stories(lines, only_supporting=False):
             story.append(sent)
     return data
 
-def get_stories(f, only_supporting=False, max_length=None):
+def generate_data(f, only_supporting=False, max_length=None):
     '''Given a file name, read the file, retrieve the stories,
     and then convert the sentences into a single story.
 
