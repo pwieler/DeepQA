@@ -15,7 +15,7 @@ https://research.fb.com/downloads/babi/
 **and here**:
 https://arxiv.org/abs/1502.05698
 
-##Prerequisites
+## Prerequisites
 * [Python](https://www.python.org/) Version 3.6
 * [PyTorch](http://pytorch.org/) Version 0.2.0.4
 
@@ -29,6 +29,20 @@ The paths for the train and test dataset files of the various tasks are preset t
 It is possible to add more than one value for the hyperparameters. **DeepQA** will then train multiple networks with every possible combination of settings given (for example size of hidden layers, number of hidden layers, learning rate, ...)
 
 There are mutiple implementations for RNN networks, by default, the DeepQA module is used.
+
+```
+mkdir DeepQA
+cd DeepQA
+git clone https://github.com/pwieler/DeepQA.git .
+
+mkdir data
+cd data
+wget http://www.thespermwhale.com/jaseweston/babi/tasks_1-20_v1-2.tar.gz
+tar -xzf tasks_1-20_v1-2.tar.gz
+
+cd ..
+python main.py
+```
 
 ### Multiple bAbI tasks
 The [master branch](https://github.com/pwieler/DeepQA/tree/master) contains an implementation that is able to train networks on order to solve one bAbI task at a time.
@@ -53,3 +67,8 @@ In order to train a network on multiple tasks simultaneously, the branch [multip
 └── utils
     └── utils.py
 ```
+
+## Authors
+* Pascal Wieler - *Master Student Computer Science at Karlsruhe Institute of Technology*
+* Todor Kostov - *Master Student Computer Science at Karlsruhe Institute of Technology*
+* David Schneider - *Master Student Computer Science at Karlsruhe Institute of Technology*
