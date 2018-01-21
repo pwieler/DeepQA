@@ -32,6 +32,7 @@ In order to train a network on multiple tasks simultaneously, the branch `multip
 
 
 ## Project Structure
+```
 .
 ├── DeepQA.py
 ├── embedding.tensor
@@ -47,7 +48,8 @@ In order to train a network on multiple tasks simultaneously, the branch `multip
 ├── README.md
 ├── results | *Default log path*
 │   └── tmp
-├── todor.py
+├── todor.py  
 ├── utils | *Util methods*
 │   └── utils.py
 └── vocabulary.pickle
+```
