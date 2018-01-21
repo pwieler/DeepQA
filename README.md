@@ -24,7 +24,7 @@ The paths for the train and test dataset files of the various tasks are preset t
 
 It is possible to add more than one value for the hyperparameters. **DeepQA** will then train multiple networks with every possible combination of settings given (for example size of hidden layers, number of hidden layers, learning rate, ...)
 
-There are mutliple implementations for RNN networks, by default, the DeepQA module is used.
+There are mutiple implementations for RNN networks, by default, the DeepQA module is used.
 
 ### Multiple bAbI tasks
 The master branch contains an implementation that is able to train networks on order to solve one bAbI task at a time.
@@ -32,8 +32,7 @@ In order to train a network on multiple tasks simultaneously, the branch `multip
 
 
 ## Project Structure
-```
-.
+.  
 ├── main.py | *Solves the bAbI QA tasks, parameter are to be set at the begin of main(). Uses QAModel by default.*
 ├── model | *Contains various RNN implementations for solving the bAbI tasks*
 │   ├── QAFFModel.py
@@ -48,4 +47,3 @@ In order to train a network on multiple tasks simultaneously, the branch `multip
 │   └── tmp
 └── utils
     └── utils.py
-```
