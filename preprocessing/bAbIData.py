@@ -136,8 +136,10 @@ class BAbIInstance:
     def hint_sentences(self):
         sentences = []
 
-        for hint in self.hints:
-            sentences.append(self.indexed_story[hint - 1])
+        for hint in sorted(self.hints):
+            for sentence in self.indexed_story:
+                if sentence[0] == hint:
+                    sentences.append(sentence)
 
         return sentences
 
