@@ -59,7 +59,7 @@ def main():
 
     ## Output parameters
     # Makes the training halt between every param set until you close the plot windows. Plots are saved either way.
-    PLOT_LOSS_INTERACTIVE = False
+    PLOT_LOSS_INTERACTIVE = True
     PRINT_BATCHWISE_LOSS = False
 
     grid_search_params = GridSearchParamDict(EMBED_HIDDEN_SIZES, STORY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, LEARNING_RATE,
