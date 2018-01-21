@@ -68,18 +68,25 @@ class QAModel(nn.Module):
     # new forward-function with question-code
     # achieves 100% on Task 1!!
     # --> question-code is like an attention-mechanism!
-    def forward(self, story, query, story_lengths, query_lengths):
+    def forward(self, stories, queries, story_lengths, query_lengths):
         # Calculate Batch-Size
-        batch_size = story.size(0)
+        batch_size = stories.size(0)
 
         # Make a hidden
         story_hidden = self._init_hidden(batch_size, self.story_hidden_size)
         query_hidden = self._init_hidden(batch_size, self.query_hidden_size)
 
         # Embed query
-        q_e = self.query_embedding(query)
+        q_e = self.query_embedding(queries)
+
+        query_lengths, q_perm_idx = query_lengths.sort(0, descending=True)
+        q_e = q_e[q_perm_idx]
+
+        packed_query = torch.nn.utils.rnn.pack_padded_sequence(q_e, query_lengths.data.cpu().numpy(),
+                                                               batch_first=True)  # pack story
+
         # Encode query-sequence with RNN
-        query_output, query_hidden = self.query_rnn(q_e, query_hidden)
+        query_output, query_hidden = self.query_rnn(packed_query, query_hidden)
 
         # question_code contains the encoded question!
         # --> we give this directly into the story_rnn,
@@ -87,13 +94,21 @@ class QAModel(nn.Module):
         # and can forget unnecessary information!
         question_code = query_hidden[0]
         question_code = question_code.view(batch_size, 1, self.query_hidden_size)
-        question_code = question_code.repeat(1, story.size(1), 1)
+
+        # Returning output to original order to have it added correctly to the story
+        q_perm_idx_inv = self.inv_perm(q_perm_idx)
+        question_code = question_code[q_perm_idx_inv]
+
+        question_code = question_code.repeat(1, stories.size(1), 1)
 
         # Embed story
-        s_e = self.story_embedding(story)
+        s_e = self.story_embedding(stories)
 
         # Combine story-embeddings with question_code
         combined = s_e + question_code
+
+        story_lengths, st_perm_idx = story_lengths.sort(0, descending=True)
+        combined = combined[st_perm_idx]
 
         # put combined tensor into story_rnn --> attention-mechanism through question_code
         packed_story = torch.nn.utils.rnn.pack_padded_sequence(combined, story_lengths.data.cpu().numpy(),
@@ -101,11 +116,19 @@ class QAModel(nn.Module):
         story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
         # remember: because we use the hidden states of the RNN, we don't have to unpack the tensor!
 
+        story_hidden_fc = story_hidden[0][self.inv_perm(st_perm_idx)]
+
         # Do softmax on the encoded story tensor!
-        fc_output = self.fc(story_hidden[0])
+        fc_output = self.fc(story_hidden_fc)
         sm_output = self.softmax(fc_output)
 
         return sm_output
+
+    def inv_perm(self, perm):
+        inv = [0] * len(perm)
+        for j, i in enumerate(perm):
+            inv[int(i.data[0])] = j
+        return Variable(torch.LongTensor(inv))
 
     def _init_hidden(self, batch_size, hidden_size):
         hidden = torch.zeros(self.n_layers * self.n_directions, batch_size, hidden_size)

@@ -16,11 +16,11 @@ import os
 
 def main():
     # Can be either 1,2,3 or 6 respective to the evaluated task.
-    BABI_TASK = 1
+    BABI_TASKS = [1,2,3,6]
 
-    print('Training for task: %d'%BABI_TASK)
+    print('Training for tasks:' + "".join([" QA" + str(t) for t in BABI_TASKS]))
 
-    base_path = "data/tasks_1-20_v1-2/shuffled"
+    base_path = "data/tasks_1-20_v1-2/en"
 
     babi_voc_path = {
         0: "data/tasks_1-20_v1-2/en/test_data",
@@ -50,7 +50,7 @@ def main():
     ONLY_EVALUATE = False
 
     ## GridSearch Parameters
-    EPOCHS = [40]  # Mostly you only want one epoch param, unless you want equal models with different training times.
+    EPOCHS = [20]  # Mostly you only want one epoch param, unless you want equal models with different training times.
     EMBED_HIDDEN_SIZES = [50]
     STORY_HIDDEN_SIZE = [100]
     N_LAYERS = [1]
@@ -65,8 +65,9 @@ def main():
     grid_search_params = GridSearchParamDict(EMBED_HIDDEN_SIZES, STORY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, LEARNING_RATE,
                                              EPOCHS)
 
-    voc, train_instances, test_instances = load_data(babi_voc_path[BABI_TASK], babi_train_path[BABI_TASK],
-                                                     babi_test_path[BABI_TASK])
+    voc, train_instances, test_instances = load_data([babi_voc_path[t] for t in BABI_TASKS],
+                                                     [babi_train_path[t] for t in BABI_TASKS],
+                                                     [babi_test_path[t] for t in BABI_TASKS])
 
     # Converts the words of the instances from string representation to integer representation using the vocabulary.
     vectorize_data(voc, train_instances, test_instances)
@@ -106,7 +107,7 @@ def main():
                                                                       print_loss=PRINT_BATCHWISE_LOSS, epochs=epochs)
 
         params = [embedding_size, story_hidden_size, n_layers, batch_size, epochs, voc_len, learning_rate, epochs]
-        save_results(BABI_TASK, train_loss, test_loss, params, train_acc, test_acc, readable_params, model, voc)
+        save_results(BABI_TASKS, train_loss, test_loss, params, train_acc, test_acc, readable_params, model, voc)
 
         # Plot Loss
         if PLOT_LOSS_INTERACTIVE:
@@ -134,13 +135,6 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=Fa
         answers = Variable(answers.type(torch.LongTensor))
         sl = Variable(sl.type(torch.LongTensor))
         ql = Variable(ql.type(torch.LongTensor))
-
-        # Sort stories by their length (because of packing in the forward step!)
-        sl, perm_idx = sl.sort(0, descending=True)
-        stories = stories[perm_idx]
-        ql = ql[perm_idx]
-        queries = queries[perm_idx]
-        answers = answers[perm_idx]
 
         output = model(stories, queries, sl, ql)
 
@@ -269,14 +263,19 @@ class GridSearchParamDict():
         return self.params
 
 
-def load_data(voc_path, train_path, test_path):
+def load_data(voc_paths, train_paths, test_paths):
     voc = bd.Vocabulary()
     train_instances = []
     test_instances = []
 
-    voc.extend_with_file(voc_path)
-    train_instances = bd.BAbIInstance.instances_from_file(train_path)
-    test_instances = bd.BAbIInstance.instances_from_file(test_path)
+    for voc_path in voc_paths:
+        voc.extend_with_file(voc_path)
+
+    for train_path in train_paths:
+        train_instances += bd.BAbIInstance.instances_from_file(train_path)
+
+    for test_path in test_paths:
+        test_instances += bd.BAbIInstance.instances_from_file(test_path)
 
     voc.sort_ids()
 
@@ -355,12 +354,14 @@ def concatenated_params(params):
     return params_str
 
 
-def save_results(task, train_loss, test_loss, params, train_accuracy, test_accuracy, params_file, model, voc,
-                 plots=True):
+def save_results(tasks, train_loss, test_loss, params, train_accuracy, test_accuracy, params_file, model, voc,
+                 make_plots=True):
     param_str = concatenated_params(params)
 
+    tasks_str = "".join(["_qa" + str(task) for task in tasks])
+
     date = str(time.strftime("%Y:%m:%d:%H:%M:%S"))
-    fname = "results/" + date.replace(":", "_") + "_" + param_str + "_task_" + str(task) + "/"
+    fname = "results/" + date.replace(":", "_") + "_" + param_str + "_tasks" + tasks_str + "/"
     try:
         os.stat(fname)
     except:
@@ -373,7 +374,8 @@ def save_results(task, train_loss, test_loss, params, train_accuracy, test_accur
     te_loss.tofile(fname + "test_loss.csv", sep=";")
     tr_acc.tofile(fname + "train_accuracy.csv", sep=";")
     te_acc.tofile(fname + "test_accuracy.csv", sep=";")
-    if plots == True:
+
+    if make_plots:
         plt.figure()
         plt.plot(train_loss, label='train-loss', color='b')
         plt.plot(test_loss, label='test-loss', color='r')
