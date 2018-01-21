@@ -6,7 +6,7 @@ import preprocessing.bAbIData as bd
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from model.QAModel import QAModel
 from utils.utils import time_since
@@ -15,8 +15,8 @@ import os
 
 
 def main():
-    # Can be either 1,2,3 or 6 respective to the evaluated task.
-    BABI_TASKS = [1,2,3,6]
+    # Can be one or multiple of 1,2,3 or 6 respective to the evaluated tasks.
+    BABI_TASKS = [1]
 
     print('Training for tasks:' + "".join([" QA" + str(t) for t in BABI_TASKS]))
 
@@ -50,7 +50,7 @@ def main():
     ONLY_EVALUATE = False
 
     ## GridSearch Parameters
-    EPOCHS = [20]  # Mostly you only want one epoch param, unless you want equal models with different training times.
+    EPOCHS = [10]  # Mostly you only want one epoch param, unless you want equal models with different training times.
     EMBED_HIDDEN_SIZES = [50]
     STORY_HIDDEN_SIZE = [100]
     N_LAYERS = [1]
@@ -62,9 +62,12 @@ def main():
     PLOT_LOSS_INTERACTIVE = False
     PRINT_BATCHWISE_LOSS = False
 
+    # Builds up every possible combination of given hyper parameters
     grid_search_params = GridSearchParamDict(EMBED_HIDDEN_SIZES, STORY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, LEARNING_RATE,
                                              EPOCHS)
 
+    # The voc is used to translate from a word to a one hot representation or actually an index in an embedding.
+    # train_instances and test_instances are self explaining.
     voc, train_instances, test_instances = load_data([babi_voc_path[t] for t in BABI_TASKS],
                                                      [babi_train_path[t] for t in BABI_TASKS],
                                                      [babi_test_path[t] for t in BABI_TASKS])
@@ -104,7 +107,8 @@ def main():
 
         train_loss, test_loss, train_acc, test_acc = conduct_training(model, train_loader, test_loader, optimizer,
                                                                       criterion, only_evaluate=ONLY_EVALUATE,
-                                                                      print_loss=PRINT_BATCHWISE_LOSS, epochs=epochs)
+                                                                      print_loss_batchwise=PRINT_BATCHWISE_LOSS,
+                                                                      epochs=epochs)
 
         params = [embedding_size, story_hidden_size, n_layers, batch_size, epochs, voc_len, learning_rate, epochs]
         save_results(BABI_TASKS, train_loss, test_loss, params, train_acc, test_acc, readable_params, model, voc)
@@ -114,7 +118,70 @@ def main():
             plot_data_in_window(train_loss, test_loss, train_acc, test_acc)
 
 
-def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=False):
+def conduct_training(model, train_loader, test_loader, optimizer, criterion, only_evaluate=False,
+                     print_loss_batchwise=False, epochs=1):
+    """
+    Trains a model for multiple epochs and keeps track of the loss and accuracy for each epoch.
+
+    :param model: The nn.module implementation that is to be trained
+    :param train_loader: DataLoader for the train data.
+    :param test_loader: DataLoader for the test data.
+    :param optimizer: Strategy for adapting the parameters with gradients. It is presumed that the optimizer already
+            accesses the models parameters.
+    :param criterion: Criteria to determine loss.
+    :param only_evaluate: If this is true, not training is performed. (For testing pretrained networks)
+    :param print_loss_batchwise: Print loss for every batch instead of only for epoch.
+    :param epochs: Number of epochs of training.
+    :return: Batchwise history of loss in training and testing as well as accuracy.
+    """
+    train_loss_history = []
+    test_loss_history = []
+
+    train_acc_history = []
+    test_acc_history = []
+
+    ## Start training
+    start = time.time()
+    if print_loss_batchwise:
+        print("Training for %d epochs..." % epochs)
+
+    for epoch in range(1, epochs + 1):
+        print("Epoche: %d" % epoch)
+        # Train cycle
+        if not only_evaluate:
+            train_loss, train_accuracy, total_loss = train(model, train_loader, optimizer, criterion, start, epoch,
+                                                           print_loss_batchwise)
+
+        # Test cycle
+        test_loss, test_accuracy = test(model, test_loader, criterion, print_loss_batchwise=False)
+
+        # Add Loss to history
+        if not only_evaluate:
+            train_loss_history = train_loss_history + train_loss
+        test_loss_history = test_loss_history + test_loss
+
+        # Add Loss to history
+        if not only_evaluate:
+            train_acc_history.append(train_accuracy)
+        test_acc_history.append(test_accuracy)
+
+    return train_loss_history, test_loss_history, train_acc_history, test_acc_history
+
+
+def train(model, train_loader, optimizer, criterion, start, epoch, print_loss_batchwise=False):
+    """
+    Implements one epoch of model training.
+
+    :param model: The nn.module implementation that is to be trained
+    :param train_loader: DataLoader for the train data.
+    :param optimizer: Strategy for adapting the parameters with gradients. It is presumed that the optimizer already
+            accesses the models parameters.
+    :param criterion: Criteria to determine loss.
+    :param start: Point of time to measure progress against.
+    :param epoch: Identifies the current epoch of training.
+    :param print_loss_batchwise: Print loss for every batch.
+    :return: Batchwise history of loss in training.
+    """
     total_loss = 0
     correct = 0
     train_loss_history = []
@@ -151,7 +218,7 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=Fa
         loss.backward()
         optimizer.step()
 
-        if print_loss:
+        if print_loss_batchwise:
             if i % 1 == 0:
                 print('[{}] Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.2f}'.format(time_since(start), epoch,
                                                                                     i * len(stories),
@@ -171,10 +238,21 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=Fa
     return train_loss_history, accuracy, total_loss  # loss per epoch
 
 
-def test(model, test_loader, criterion, PRINT_LOSS=False):
+def test(model, test_loader, criterion, print_loss_batchwise=False):
+    """
+    Implements one epoch of model testing.
+
+    :param model: The nn.module implementation that is to be trained
+    :param test_loader: DataLoader for the test data.
+    :param criterion: Criteria to determine loss.
+    :param print_loss_batchwise: Print loss for every batch instead of only for epoch.
+    :return: Batchwise history of loss in testing.
+    """
+
+    # Make sure train functionality like dropout is deactivated.
     model.eval()
 
-    if PRINT_LOSS:
+    if print_loss_batchwise:
         print("evaluating trained model ...")
 
     correct = 0
@@ -291,42 +369,6 @@ def vectorize_data(voc, train_instances, test_instances):
 
     for inst in test_instances:
         inst.vectorize(voc)
-
-
-def conduct_training(model, train_loader, test_loader, optimizer, criterion, only_evaluate=False, print_loss=False,
-                     epochs=1):
-    train_loss_history = []
-    test_loss_history = []
-
-    train_acc_history = []
-    test_acc_history = []
-
-    ## Start training
-    start = time.time()
-    if print_loss:
-        print("Training for %d epochs..." % epochs)
-
-    for epoch in range(1, epochs + 1):
-        print("Epoche: %d" % epoch)
-        # Train cycle
-        if not only_evaluate:
-            train_loss, train_accuracy, total_loss = train(model, train_loader, optimizer, criterion, start, epoch,
-                                                           print_loss)
-
-        # Test cycle
-        test_loss, test_accuracy = test(model, test_loader, criterion, PRINT_LOSS=False)
-
-        # Add Loss to history
-        if not only_evaluate:
-            train_loss_history = train_loss_history + train_loss
-        test_loss_history = test_loss_history + test_loss
-
-        # Add Loss to history
-        if not only_evaluate:
-            train_acc_history.append(train_accuracy)
-        test_acc_history.append(test_accuracy)
-
-    return train_loss_history, test_loss_history, train_acc_history, test_acc_history
 
 
 def plot_data_in_window(train_loss, test_loss, train_acc, test_acc):
