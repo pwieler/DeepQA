@@ -12,8 +12,8 @@ def time_since(since):
     s -= m * 60
     return '%dm %ds' % (m, s)
 
-def pad_sequences(sequences, maxlen=None, dtype='int32',
-                  padding='pre', truncating='pre', value=0.):
+def padding(sequences, maxlen=None, dtype='int32',
+            padding='pre', truncating='pre', value=0.):
     """Pads each sequence to the same length (length of the longest sequence).
     If maxlen is provided, any sequence longer
     than maxlen is truncated to maxlen.
@@ -80,7 +80,7 @@ def pad_sequences(sequences, maxlen=None, dtype='int32',
             raise ValueError('Padding type "%s" not understood' % padding)
     return x
 
-def parse_stories(lines, only_supporting=False):
+def parse_data(lines, only_supporting=False):
     '''Parse stories provided in the bAbi tasks format
 
     If only_supporting is true,
@@ -119,7 +119,7 @@ def generate_data(f, only_supporting=False, max_length=None):
     If max_length is supplied,
     any stories longer than max_length tokens will be discarded.
     '''
-    data = parse_stories(f.readlines(), only_supporting=only_supporting)
+    data = parse_data(f.readlines(), only_supporting=only_supporting)
     #flatten = lambda data: reduce(lambda x, y: x + y, data)
     for story, q, answer in data:
         data1 = [(story, q, answer) for story, q, answer in data if not max_length or len(story) <= max_length]
@@ -138,7 +138,7 @@ def tokenize(sent):
     '''
     return [x.strip() for x in re.split('(\W+)?', sent) if x.strip()]
 
-def vectorize_stories(data, word_idx, story_maxlen, query_maxlen, fact_maxlen):
+def vectorize_data(data, word_idx, story_maxlen, query_maxlen, fact_maxlen):
     xs = []
     xqs = []
     ys = []
@@ -151,7 +151,7 @@ def vectorize_stories(data, word_idx, story_maxlen, query_maxlen, fact_maxlen):
 
         xfl = [len(l) for l in xf]
         facts_lengths.append(np.array(xfl))
-        xf = pad_sequences(xf, maxlen=fact_maxlen, padding='post')
+        xf = padding(xf, maxlen=fact_maxlen, padding='post')
 
         xq = [word_idx[w] for w in query]
         # let's not forget that index 0 is reserved
@@ -165,4 +165,4 @@ def vectorize_stories(data, word_idx, story_maxlen, query_maxlen, fact_maxlen):
     xsl = [len(l) for l in xs]  #contains length of stories
     xqsl = [len(l) for l in xqs] # contains length of queries
 
-    return pad_sequences(xs, maxlen=story_maxlen, padding='post'), pad_sequences(xqs, maxlen=query_maxlen, padding='post'), np.array(ys), np.array(xsl), np.array(xqsl), pad_sequences(facts_lengths, maxlen=story_maxlen, padding='post') # info pad_sequence wurde in rnn.py reinkopiert
+    return padding(xs, maxlen=story_maxlen, padding='post'), padding(xqs, maxlen=query_maxlen, padding='post'), np.array(ys), np.array(xsl), np.array(xqsl), padding(facts_lengths, maxlen=story_maxlen, padding='post') # info pad_sequence wurde in rnn.py reinkopiert
