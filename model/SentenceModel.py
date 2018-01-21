@@ -9,7 +9,7 @@ from torch.autograd import Variable
 #       Our dataset consists out of stories and queries --> every story belongs to one query
 #       --> every story consists out of multiple facts
 #       --> one fact is one sentence: "Mary is in the house."
-#  This is model, where all the facts for one query are read in separateley instead of reading in all words together!
+#  This is a model, where all the facts for one query are read in separateley instead of reading in all words together!
 #  The intention was that it may perform better because it has more information about one unique fact!
 #  At the moment it does not outperform our standard model --> but here it is working progress!
 #
