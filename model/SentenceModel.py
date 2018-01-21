@@ -8,9 +8,9 @@ from torch.autograd import Variable
 # Input should be in that form:
 #        story: BATCH_SIZE x STORY_MAX_LEN x FACT_MAX_LEN
 #        query: BATCH_SIZE x QUERY_MAX_LEN
-#  To have the right preprocessing DeepQA.py on the branch "Relation_Networks" can be runned which contains the same model!
+#  To have the right preprocessing DeepQA.py on the branch "sentence_model" can be runned which contains the same model!
 
-
+## --> if you want to try this model, go to branch "sentence_model"!!
 
 ## Model with separated facts
 #  Remember:
