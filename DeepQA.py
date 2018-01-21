@@ -8,6 +8,7 @@ import time
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
 
@@ -209,90 +210,23 @@ class QAModel(nn.Module):
         self.story_embedding = nn.Embedding(input_size, embedding_size) #Embedding bildet ab von Vokabular (Indize) auf n-dim Raum
 
         self.story_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers,
-                                bidirectional=bidirectional, batch_first=True, dropout=0.3)
+                                bidirectional=bidirectional, batch_first=True, dropout=0.4)
 
         self.fact_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers,
-                                bidirectional=bidirectional, batch_first=True, dropout=0.3)
+                                bidirectional=bidirectional, batch_first=True, dropout=0.4)
 
         self.query_embedding = nn.Embedding(input_size, embedding_size)
         self.query_rnn = nn.GRU(embedding_size, query_hidden_size, n_layers,
-                                bidirectional=bidirectional, batch_first=True, dropout=0.3)
+                                bidirectional=bidirectional, batch_first=True, dropout=0.4)
 
         # info: if we use the old-forward function fc-layer has input-length: "story_hidden_size+query_hidden_size"
-        self.fc = nn.Linear(story_hidden_size, output_size)
+        self.fc1 = nn.Linear(story_hidden_size, 300)
+        self.dr1 = nn.Dropout(p=0.4)
+        self.fc2 = nn.Linear(300, 250)
+        self.dr2 = nn.Dropout(p=0.4)
+        self.fc3 = nn.Linear(250, output_size)
+        self.dr3 = nn.Dropout(p=0.4)
         self.softmax = nn.LogSoftmax()
-
-    # this is the old forward version! below version with question_code performs much better!!
-    def old_forward(self, story, query, story_lengths, query_lengths):
-        # input shape: B x S (input size)
-
-        # story has dimension batch_size * number of words
-        batch_size = story.size(0)
-
-        # Create hidden states for RNNs
-        story_hidden = self._init_hidden(batch_size, self.story_hidden_size)
-        query_hidden = self._init_hidden(batch_size, self.query_hidden_size)
-
-        # Create Story-Embeddings
-        s_e = self.story_embedding(story)   # encodings have size: batch_size*length_of_sequence*EMBBEDDING_SIZE
-
-        # packed Story-Embeddings into RNN
-        packed_story = torch.nn.utils.rnn.pack_padded_sequence(s_e, story_lengths.data.cpu().numpy(), batch_first=True)  # pack story
-        story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
-        # unpacking is not necessary, because we use hidden states of RNN
-
-        q_e = self.query_embedding(query)
-        query_output, query_hidden = self.query_rnn(q_e, query_hidden)
-
-        merged = torch.cat([story_hidden[0], query_hidden[0]],1)
-        merged = merged.view(batch_size, -1)
-        fc_output = self.fc(merged)
-        sm_output = self.softmax(fc_output)
-
-        return sm_output
-
-
-    # new forward-function with question-code
-    # achieves 100% on Task 1!!
-    # --> question-code is like an attention-mechanism!
-    def forward_question_code(self, story, query, story_lengths, query_lengths):
-
-        # Calculate Batch-Size
-        batch_size = story.size(0)
-
-        # Make a hidden
-        story_hidden = self._init_hidden(batch_size, self.story_hidden_size)
-        query_hidden = self._init_hidden(batch_size, self.query_hidden_size)
-
-        # Embed query
-        q_e = self.query_embedding(query)
-        # Encode query-sequence with RNN
-        query_output, query_hidden = self.query_rnn(q_e, query_hidden)
-
-        # question_code contains the encoded question!
-        # --> we give this directly into the story_rnn,
-        # so that the story_rnn can focus on the question already
-        # and can forget unnecessary information!
-        question_code = query_hidden[0]
-        question_code = question_code.view(batch_size,1,self.query_hidden_size)
-        question_code = question_code.repeat(1,story.size(1),1)
-
-        # Embed story
-        s_e = self.story_embedding(story)
-
-        # Combine story-embeddings with question_code
-        combined = s_e + question_code
-
-        # put combined tensor into story_rnn --> attention-mechansism through question_code
-        packed_story = torch.nn.utils.rnn.pack_padded_sequence(combined, story_lengths.data.cpu().numpy(), batch_first=True)  # pack story
-        story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
-        # remember: because we use the hidden states of the RNN, we don't have to unpack the tensor!
-
-        # Do softmax on the encoded story tensor!
-        fc_output = self.fc(story_hidden[0])
-        sm_output = self.softmax(fc_output)
-
-        return sm_output
 
     def forward(self, story, query, story_lengths, query_lengths, fact_lengths):
 
@@ -344,8 +278,14 @@ class QAModel(nn.Module):
         # remember: because we use the hidden states of the RNN, we don't have to unpack the tensor!
 
         # Do softmax on the encoded story tensor!
-        fc_output = self.fc(story_hidden[0])
-        sm_output = self.softmax(fc_output)
+        fc1_out = F.relu(self.fc1(story_hidden[0]))
+        fc1_out = self.dr1(fc1_out)
+        fc2_out = F.relu(self.fc2(fc1_out))
+        fc2_out = self.dr2(fc2_out)
+        fc3_out = F.relu(self.fc3(fc2_out))
+        fc3_out = self.dr3(fc3_out)
+
+        sm_output = self.softmax(fc3_out)
 
         return sm_output
 
