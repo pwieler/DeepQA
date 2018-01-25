@@ -38,11 +38,11 @@ class SentenceModel(nn.Module):
 
         # Reads in all fact-encodings belonging to one query --> generates one encoding for the whole story that is related to the query!
         self.story_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers,
-                                bidirectional=bidirectional, batch_first=True, dropout=0.4)
+                                bidirectional=bidirectional, batch_first=True, dropout=0.3)
 
         # Reads in each word of the query --> generates one encoding for the query
         self.query_rnn = nn.GRU(embedding_size, query_hidden_size, n_layers,
-                                bidirectional=bidirectional, batch_first=True, dropout=0.4)
+                                bidirectional=bidirectional, batch_first=True, dropout=0.3)
 
         ## Definition of Output-Layers --> here we do softmax on the vocabulary_size!
         # self.fc1 = nn.Linear(150, 300)
@@ -63,7 +63,7 @@ class SentenceModel(nn.Module):
         self.g_3b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
         self.g_4 = nn.Linear(256, 256)
         self.g_4b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
-        self.dr2 = nn.Dropout(p=0.4)
+        self.dr2 = nn.Dropout(p=0.3)
 
         self.f_1 = nn.Linear(256,256)
         self.f_1b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
@@ -71,7 +71,7 @@ class SentenceModel(nn.Module):
         self.f_2b = nn.BatchNorm1d(512, eps=1e-05, momentum=0.1, affine=True)
         self.f_3 = nn.Linear(512,output_size)
         self.f_3b = nn.BatchNorm1d(output_size, eps=1e-05, momentum=0.1, affine=True)
-        self.dr3 = nn.Dropout(p=0.4)
+        self.dr3 = nn.Dropout(p=0.3)
         self.softmax = nn.LogSoftmax()
 
     def forward(self, story, query, story_lengths, query_lengths, fact_lengths, fact_maxlen):
@@ -153,7 +153,7 @@ class SentenceModel(nn.Module):
         return sm_output
 
     def generateRN_Input(self, facts, question_code):
-        label = Variable(torch.FloatTensor(range(1, 21)).view(20,1))
+        label = create_variable(torch.FloatTensor(range(1, 21)).view(20,1))
         output = []
         for i in range(facts.size(0)):
             a = facts[i]
@@ -182,4 +182,13 @@ class SentenceModel(nn.Module):
     def _init_hidden(self, batch_size, hidden_size):
         hidden = torch.zeros(self.n_layers * self.n_directions,
                              batch_size, hidden_size)
-        return Variable(hidden)
+        return create_variable(hidden)
+
+
+
+def create_variable(tensor):
+    # Do cuda() before wrapping with variable
+    if torch.cuda.is_available():
+        return Variable(tensor.cuda())
+    else:
+        return Variable(tensor)

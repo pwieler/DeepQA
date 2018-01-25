@@ -40,12 +40,12 @@ def train():
 
     for i, (stories, queries, answers, sl, ql, fl) in enumerate(train_loader, 1):
 
-        stories = Variable(stories.type(torch.LongTensor))
-        queries = Variable(queries.type(torch.LongTensor))
-        answers = Variable(answers.type(torch.LongTensor))
-        sl = Variable(sl.type(torch.LongTensor))
-        ql = Variable(ql.type(torch.LongTensor))
-        fl = Variable(fl.type(torch.LongTensor))
+        stories = create_variable(stories.type(torch.LongTensor))
+        queries = create_variable(queries.type(torch.LongTensor))
+        answers = create_variable(answers.type(torch.LongTensor))
+        sl = create_variable(sl.type(torch.LongTensor))
+        ql = create_variable(ql.type(torch.LongTensor))
+        fl = create_variable(fl.type(torch.LongTensor))
 
         # Sort stories by their length (because of packing in the forward step!)
         sl, perm_idx = sl.sort(0, descending=True)
@@ -100,12 +100,12 @@ def test():
     test_loss_history = []
 
     for stories, queries, answers, sl, ql, fl in test_loader:
-        stories = Variable(stories.type(torch.LongTensor))
-        queries = Variable(queries.type(torch.LongTensor))
-        answers = Variable(answers.type(torch.LongTensor))
-        sl = Variable(sl.type(torch.LongTensor))
-        ql = Variable(ql.type(torch.LongTensor))
-        fl = Variable(fl.type(torch.LongTensor))
+        stories = create_variable(stories.type(torch.LongTensor))
+        queries = create_variable(queries.type(torch.LongTensor))
+        answers = create_variable(answers.type(torch.LongTensor))
+        sl = create_variable(sl.type(torch.LongTensor))
+        ql = create_variable(ql.type(torch.LongTensor))
+        fl = create_variable(fl.type(torch.LongTensor))
 
         # Sort stories by their length
         sl, perm_idx = sl.sort(0, descending=True)
@@ -130,6 +130,12 @@ def test():
 
     return test_loss_history, accuracy
 
+def create_variable(tensor):
+    # Do cuda() before wrapping with variable
+    if torch.cuda.is_available():
+        return Variable(tensor.cuda())
+    else:
+        return Variable(tensor)
 
 if __name__ == "__main__":
 
@@ -203,6 +209,15 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
     print(model)
+
+    ## Doing stuff for cuda:
+
+    if torch.cuda.device_count() > 1:
+        print("Let's use", torch.cuda.device_count(), "GPUs!")
+        model = nn.DataParallel(model)
+
+    if torch.cuda.is_available():
+        model.cuda()
 
 
     ## Start training
