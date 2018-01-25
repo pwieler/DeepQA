@@ -173,7 +173,7 @@ if __name__ == "__main__":
     BATCH_SIZE = 32
     EPOCHS = 900
     VOC_SIZE = voc_size
-    LEARNING_RATE = 0.0002
+    LEARNING_RATE = 0.0004
 
     print('\nSettings:\nEMBED_HIDDEN_SIZE: %d\nSTORY_HIDDEN_SIZE: %d\nQUERY_HIDDEN_SIZE: %d'
           '\nN_LAYERS: %d\nBATCH_SIZE: %d\nEPOCHS: %d\nVOC_SIZE: %d\nLEARNING_RATE: %f\n\n'

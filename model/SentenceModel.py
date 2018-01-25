@@ -63,6 +63,7 @@ class SentenceModel(nn.Module):
         self.g_3b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
         self.g_4 = nn.Linear(256, 256)
         self.g_4b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
+        self.dr2 = nn.Dropout(p=0.4)
 
         self.f_1 = nn.Linear(256,256)
         self.f_1b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
@@ -70,7 +71,7 @@ class SentenceModel(nn.Module):
         self.f_2b = nn.BatchNorm1d(512, eps=1e-05, momentum=0.1, affine=True)
         self.f_3 = nn.Linear(512,output_size)
         self.f_3b = nn.BatchNorm1d(output_size, eps=1e-05, momentum=0.1, affine=True)
-        #self.dr3 = nn.Dropout(p=0.4)
+        self.dr3 = nn.Dropout(p=0.4)
         self.softmax = nn.LogSoftmax()
 
     def forward(self, story, query, story_lengths, query_lengths, fact_lengths, fact_maxlen):
@@ -123,10 +124,12 @@ class SentenceModel(nn.Module):
         g_theta = F.relu(self.g_4b(self.g_4(x)))
 
         g_sum = torch.sum(g_theta.view(batch_size,190,256),1).view(batch_size,256)
+        g_sum = self.dr2(g_sum)
 
         x = F.relu(self.f_1b(self.f_1(g_sum)))
         x = F.relu(self.f_2b(self.f_2(x)))
         f_theta = self.f_3b(self.f_3(x))
+        f_theta = self.dr3(f_theta)
         sm_output = self.softmax(f_theta)
 
         # # Combine story-embeddings with question_code
