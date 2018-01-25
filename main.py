@@ -18,6 +18,16 @@ from model.QAModel import QAModel
 from utils.utils import time_since
 
 
+def create_var(tensor):
+    if torch.cuda.is_available():
+        return Variable(tensor.cuda())
+    return Variable(tensor.cuda())
+
+def cuda_model(mod):
+    if torch.cuda.is_available():
+        return mod.cuda()
+    return mod
+
 def main():
     # Some old PY 2.6 hacks to include the dirs
     sys.path.insert(0, 'model/')
@@ -101,7 +111,7 @@ def main():
 
         ## Initialize Model and Optimizer
         model = QAModel(voc_len, embedding_size, story_hidden_size, voc_len, n_layers)
-
+        model = cuda_model(model)
         # If a path to a state dict of a previously trained model is given, the state will be loaded here.
         if PREVIOUSLY_TRAINED_MODEL is not None:
             model.load_state_dict(torch.load(PREVIOUSLY_TRAINED_MODEL))
@@ -137,11 +147,11 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=Fa
     # The stories parameter will contain a tensor of size 32x66. Likewise for the other parameters
     for i, (stories, queries, answers, sl, ql) in enumerate(train_loader, 1):
 
-        stories = Variable(stories.type(torch.LongTensor))
-        queries = Variable(queries.type(torch.LongTensor))
-        answers = Variable(answers.type(torch.LongTensor))
-        sl = Variable(sl.type(torch.LongTensor))
-        ql = Variable(ql.type(torch.LongTensor))
+        stories = create_var(stories.type(torch.LongTensor))
+        queries = create_var(queries.type(torch.LongTensor))
+        answers = create_var(answers.type(torch.LongTensor))
+        sl = create_var(sl.type(torch.LongTensor))
+        ql = create_var(ql.type(torch.LongTensor))
 
         # Sort stories by their length (because of packing in the forward step!)
         sl, perm_idx = sl.sort(0, descending=True)
