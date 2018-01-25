@@ -15,7 +15,7 @@ from torch.utils.data import DataLoader
 
 import preprocessing.bAbIData as bd
 from model.QAModel import QAModel
-from utils.utils import *
+from utils.utils import create_var, time_since, cuda_model
 
 
 

@@ -13,3 +13,8 @@ def create_var(tensor):
     if torch.cuda.is_available():
         return Variable(tensor.cuda())
     return Variable(tensor)
+
+def cuda_model(model):
+    if torch.cuda.is_available():
+        return model.cuda()
+    return model
