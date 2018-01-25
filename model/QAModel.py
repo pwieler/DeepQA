@@ -8,8 +8,10 @@ import numpy as np
 
 class QAModel(nn.Module):
     def __init__(self, input_size, embedding_size, story_hidden_size, output_size, n_layers=1, bidirectional=False,
-                 custom_embedding=None):
+                 custom_embedding=None, use_cuda=True):
         super(QAModel, self).__init__()
+
+        self.use_cuda=use_cuda
 
         self.voc_size = input_size
         self.embedding_size = embedding_size
@@ -128,8 +130,15 @@ class QAModel(nn.Module):
         inv = [0] * len(perm)
         for j, i in enumerate(perm):
             inv[int(i.data[0])] = j
-        return Variable(torch.LongTensor(inv))
+        return self.create_variable(torch.LongTensor(inv))
 
     def _init_hidden(self, batch_size, hidden_size):
         hidden = torch.zeros(self.n_layers * self.n_directions, batch_size, hidden_size)
-        return Variable(hidden)
+        return self.create_variable(hidden)
+
+    def create_variable(self, tensor):
+        # Do cuda() before wrapping with variable
+        if self.use_cuda and torch.cuda.is_available():
+            return Variable(tensor.cuda())
+        else:
+            return Variable(tensor)

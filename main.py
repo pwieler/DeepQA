@@ -15,6 +15,14 @@ import os
 
 
 def main():
+    print("Start of Script")
+    start = time.time()
+
+    use_cuda = True
+
+    if use_cuda:
+        print("Cuda available: " + str(torch.cuda.is_available()))
+
     # Can be one or multiple of 1,2,3 or 6 respective to the evaluated tasks.
     BABI_TASKS = [1,2,3,6]
 
@@ -50,9 +58,9 @@ def main():
     ONLY_EVALUATE = False
 
     ## GridSearch Parameters
-    EPOCHS = [3, 80]  # Mostly you only want one epoch param, unless you want equal models with different training times.
+    EPOCHS = [40]  # Mostly you only want one epoch param, unless you want equal models with different training times.
     EMBED_HIDDEN_SIZES = [50]
-    STORY_HIDDEN_SIZE = [500]
+    STORY_HIDDEN_SIZE = [100]
     N_LAYERS = [3]
     BATCH_SIZE = [16]
     LEARNING_RATE = [0.001]  # 0.0001
@@ -96,11 +104,14 @@ def main():
         train_loader, test_loader = prepare_dataloaders(train_instances, test_instances, batch_size)
 
         ## Initialize Model and Optimizer
-        model = QAModel(voc_len, embedding_size, story_hidden_size, voc_len, n_layers)
+        model = QAModel(voc_len, embedding_size, story_hidden_size, voc_len, n_layers, use_cuda=use_cuda)
 
-        # If a path to a state dict of a previously trained model is given, the state will be loaded here.
+            # If a path to a state dict of a previously trained model is given, the state will be loaded here.
         if PREVIOUSLY_TRAINED_MODEL is not None:
             model.load_state_dict(torch.load(PREVIOUSLY_TRAINED_MODEL))
+
+        if use_cuda and torch.cuda.is_available():
+            model.cuda()
 
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
         criterion = nn.NLLLoss()
@@ -108,7 +119,7 @@ def main():
         train_loss, test_loss, train_acc, test_acc = conduct_training(model, train_loader, test_loader, optimizer,
                                                                       criterion, only_evaluate=ONLY_EVALUATE,
                                                                       print_loss_batchwise=PRINT_BATCHWISE_LOSS,
-                                                                      epochs=epochs)
+                                                                      epochs=epochs, use_cuda=use_cuda)
 
         params = [embedding_size, story_hidden_size, n_layers, batch_size, epochs, voc_len, learning_rate, epochs]
         save_results(BABI_TASKS, train_loss, test_loss, params, train_acc, test_acc, readable_params, model, voc)
@@ -119,7 +130,7 @@ def main():
 
 
 def conduct_training(model, train_loader, test_loader, optimizer, criterion, only_evaluate=False,
-                     print_loss_batchwise=False, epochs=1):
+                     print_loss_batchwise=False, epochs=1, use_cuda=True):
     """
     Trains a model for multiple epochs and keeps track of the loss and accuracy for each epoch.
 
@@ -146,14 +157,15 @@ def conduct_training(model, train_loader, test_loader, optimizer, criterion, onl
         print("Training for %d epochs..." % epochs)
 
     for epoch in range(1, epochs + 1):
-        print("Epoche: %d" % epoch)
+
+        print("[{}] Epoche: {}".format(time_since(start), epoch))
         # Train cycle
         if not only_evaluate:
             train_loss, train_accuracy, total_loss = train(model, train_loader, optimizer, criterion, start, epoch,
-                                                           print_loss_batchwise)
+                                                           print_loss_batchwise, use_cuda=use_cuda)
 
         # Test cycle
-        test_loss, test_accuracy = test(model, test_loader, criterion, print_loss_batchwise=False)
+        test_loss, test_accuracy = test(model, test_loader, criterion, print_loss_batchwise=False, use_cuda=use_cuda)
 
         # Add Loss to history
         if not only_evaluate:
@@ -168,7 +180,7 @@ def conduct_training(model, train_loader, test_loader, optimizer, criterion, onl
     return train_loss_history, test_loss_history, train_acc_history, test_acc_history
 
 
-def train(model, train_loader, optimizer, criterion, start, epoch, print_loss_batchwise=False):
+def train(model, train_loader, optimizer, criterion, start, epoch, print_loss_batchwise=False, use_cuda=True):
     """
     Implements one epoch of model training.
 
@@ -182,6 +194,8 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss_ba
     :param print_loss_batchwise: Print loss for every batch.
     :return: Batchwise history of loss in training.
     """
+    epoch_start = time.time()
+
     total_loss = 0
     correct = 0
     train_loss_history = []
@@ -197,11 +211,11 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss_ba
     # The stories parameter will contain a tensor of size 32x66. Likewise for the other parameters
     for i, (stories, queries, answers, sl, ql) in enumerate(train_loader, 1):
 
-        stories = Variable(stories.type(torch.LongTensor))
-        queries = Variable(queries.type(torch.LongTensor))
-        answers = Variable(answers.type(torch.LongTensor))
-        sl = Variable(sl.type(torch.LongTensor))
-        ql = Variable(ql.type(torch.LongTensor))
+        stories = create_variable(stories.type(torch.LongTensor), use_cuda)
+        queries = create_variable(queries.type(torch.LongTensor), use_cuda)
+        answers = create_variable(answers.type(torch.LongTensor), use_cuda)
+        sl = create_variable(sl.type(torch.LongTensor), use_cuda)
+        ql = create_variable(ql.type(torch.LongTensor), use_cuda)
 
         output = model(stories, queries, sl, ql)
 
@@ -220,7 +234,7 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss_ba
 
         if print_loss_batchwise:
             if i % 1 == 0:
-                print('[{}] Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.2f}'.format(time_since(start), epoch,
+                print('    [~{}] Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.2f}'.format(time_since(start), epoch,
                                                                                     i * len(stories),
                                                                                     len(train_loader.dataset),
                                                                                     100. * i * len(stories) / len(
@@ -233,12 +247,12 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss_ba
 
     accuracy = 100. * correct / train_data_size
 
-    print('Training set: Accuracy: {}/{} ({:.0f}%)'.format(correct, train_data_size, accuracy))
+    print('    [~ {}] Training set: Accuracy: {}/{} ({:.0f}%)'.format(time_since(start), correct, train_data_size, accuracy))
 
     return train_loss_history, accuracy, total_loss  # loss per epoch
 
 
-def test(model, test_loader, criterion, print_loss_batchwise=False):
+def test(model, test_loader, criterion, print_loss_batchwise=False, use_cuda=True):
     """
     Implements one epoch of model testing.
 
@@ -248,6 +262,7 @@ def test(model, test_loader, criterion, print_loss_batchwise=False):
     :param print_loss_batchwise: Print loss for every batch instead of only for epoch.
     :return: Batchwise history of loss in testing.
     """
+    epoch_start = time.time()
 
     # Make sure train functionality like dropout is deactivated.
     model.eval()
@@ -261,19 +276,12 @@ def test(model, test_loader, criterion, print_loss_batchwise=False):
     test_loss_history = []
 
     for stories, queries, answers, sl, ql in test_loader:
-        stories = Variable(stories.type(torch.LongTensor))
-        queries = Variable(queries.type(torch.LongTensor))
-        answers = Variable(answers.type(torch.LongTensor))
-        sl = Variable(sl.type(torch.LongTensor))
-        ql = Variable(ql.type(torch.LongTensor))
 
-        # Sort stories by their length
-        sl, perm_idx = sl.sort(0, descending=True)
-        stories = stories[perm_idx]
-        # ql, perm_idx = ql.sort(0, descending=True) # if we sort query also --> then they do not fit together!
-        ql = ql[perm_idx]
-        queries = queries[perm_idx]
-        answers = answers[perm_idx]
+        stories = create_variable(stories.type(torch.LongTensor), use_cuda)
+        queries = create_variable(queries.type(torch.LongTensor), use_cuda)
+        answers = create_variable(answers.type(torch.LongTensor), use_cuda)
+        sl = create_variable(sl.type(torch.LongTensor), use_cuda)
+        ql = create_variable(ql.type(torch.LongTensor), use_cuda)
 
         output = model(stories, queries, sl, ql)
 
@@ -288,7 +296,7 @@ def test(model, test_loader, criterion, print_loss_batchwise=False):
 
     accuracy = 100. * correct / test_data_size
 
-    print('Test set: Accuracy: {}/{} ({:.0f}%)'.format(correct, test_data_size, accuracy))
+    print('    [~ {}] Test set: Accuracy: {}/{} ({:.0f}%)'.format(time_since(epoch_start), correct, test_data_size, accuracy))
 
     return test_loss_history, accuracy
 
@@ -439,6 +447,13 @@ def save_results(tasks, train_loss, test_loss, params, train_accuracy, test_accu
     torch.save(model.state_dict(), fname + "trained_model.pth")
     pickle.dump(voc.voc_dict, open(fname + "vocabulary.pkl", "wb"))
 
+
+def create_variable(tensor, use_cuda=True):
+    # Do cuda() before wrapping with variable
+    if use_cuda and torch.cuda.is_available():
+        return Variable(tensor.cuda())
+    else:
+        return Variable(tensor)
 
 if __name__ == "__main__":
     main()
