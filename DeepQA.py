@@ -163,17 +163,17 @@ if __name__ == "__main__":
 
 
     ## Parameters
-    EMBED_HIDDEN_SIZE = 50
-    STORY_HIDDEN_SIZE = 50
-    QUERY_HIDDEN_SIZE = 50
+    EMBED_HIDDEN_SIZE = 32
+    STORY_HIDDEN_SIZE = 32
+    QUERY_HIDDEN_SIZE = 32
     # note: since we are adding the encoded query to the embedded stories,
     #  QUERY_HIDDEN_SIZE should be equal to EMBED_HIDDEN_SIZE
 
     N_LAYERS = 1
     BATCH_SIZE = 32
-    EPOCHS = 50
+    EPOCHS = 900
     VOC_SIZE = voc_size
-    LEARNING_RATE = 0.001
+    LEARNING_RATE = 0.0002
 
     print('\nSettings:\nEMBED_HIDDEN_SIZE: %d\nSTORY_HIDDEN_SIZE: %d\nQUERY_HIDDEN_SIZE: %d'
           '\nN_LAYERS: %d\nBATCH_SIZE: %d\nEPOCHS: %d\nVOC_SIZE: %d\nLEARNING_RATE: %f\n\n'

@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+import itertools
 
 ## Model with separated facts
 #  Remember:
@@ -44,12 +45,32 @@ class SentenceModel(nn.Module):
                                 bidirectional=bidirectional, batch_first=True, dropout=0.4)
 
         ## Definition of Output-Layers --> here we do softmax on the vocabulary_size!
-        self.fc1 = nn.Linear(story_hidden_size, 300)
-        self.dr1 = nn.Dropout(p=0.4)
-        self.fc2 = nn.Linear(300, 250)
-        self.dr2 = nn.Dropout(p=0.4)
-        self.fc3 = nn.Linear(250, output_size)
-        self.dr3 = nn.Dropout(p=0.4)
+        # self.fc1 = nn.Linear(150, 300)
+        # self.dr1 = nn.Dropout(p=0.4)
+        # self.fc2 = nn.Linear(300, 250)
+        # self.dr2 = nn.Dropout(p=0.4)
+        # self.fc3 = nn.Linear(250, output_size)
+        # self.dr3 = nn.Dropout(p=0.4)
+        # self.softmax = nn.LogSoftmax()
+
+
+        # RN
+        self.g_1 = nn.Linear(2*story_hidden_size+query_hidden_size+2,256)
+        self.g_1b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
+        self.g_2 = nn.Linear(256, 256)
+        self.g_2b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
+        self.g_3 = nn.Linear(256, 256)
+        self.g_3b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
+        self.g_4 = nn.Linear(256, 256)
+        self.g_4b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
+
+        self.f_1 = nn.Linear(256,256)
+        self.f_1b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
+        self.f_2 = nn.Linear(256,512)
+        self.f_2b = nn.BatchNorm1d(512, eps=1e-05, momentum=0.1, affine=True)
+        self.f_3 = nn.Linear(512,output_size)
+        self.f_3b = nn.BatchNorm1d(output_size, eps=1e-05, momentum=0.1, affine=True)
+        #self.dr3 = nn.Dropout(p=0.4)
         self.softmax = nn.LogSoftmax()
 
     def forward(self, story, query, story_lengths, query_lengths, fact_lengths, fact_maxlen):
@@ -80,12 +101,8 @@ class SentenceModel(nn.Module):
         # so that the story_rnn can focus on the question already
         # and can forget unnecessary information!
         question_code = query_hidden[0]
-        question_code = question_code.view(batch_size,1,self.query_hidden_size)
+        question_code = question_code.view(batch_size,self.query_hidden_size)
 
-        # Create a question-code for every word!
-        question_code_words = question_code.view(batch_size,1,1,self.query_hidden_size).repeat(1, story.size(1), fact_maxlen, 1)
-        # Create a question-code for every fact!
-        question_code_facts = question_code.repeat(1,story.size(1),1)
 
         # Embed Words that are contained in the story
         # --> to do that we have to rearrange the tensor, so that we have the form:
@@ -93,33 +110,71 @@ class SentenceModel(nn.Module):
         s_e = self.story_embedding(story.view(batch_size,story_size*fact_maxlen))
         s_e = s_e.view(batch_size,story_size,fact_maxlen,-1) # 32x20x7x50
 
-        # Combine word-embeddings with question_code
-        s_e = s_e + question_code_words
-
         # Read in the words belonging to the facts into the Fact-RNN --> generate fact-encodings
         fact_output, fact_hidden = self.fact_rnn(s_e.view(batch_size*story_size,fact_maxlen,-1), fact_hidden)
 
         fact_encodings = fact_hidden.view(batch_size, story_size, -1) # 32x20x50
 
-        # Combine story-embeddings with question_code
-        combined = fact_encodings + question_code_facts
+        rn_input = self.generateRN_Input(fact_encodings,question_code)
 
-        # put combined tensor into story_rnn --> attention-mechanism through question_code
-        packed_story = torch.nn.utils.rnn.pack_padded_sequence(combined, story_lengths.data.cpu().numpy(), batch_first=True)  # pack story
-        story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
-        # remember: because we use the hidden states of the RNN, we don't have to unpack the tensor!
+        x = F.relu(self.g_1b(self.g_1(rn_input)))
+        x = F.relu(self.g_2b(self.g_2(x)))
+        x = F.relu(self.g_3b(self.g_3(x)))
+        g_theta = F.relu(self.g_4b(self.g_4(x)))
+
+        g_sum = torch.sum(g_theta.view(batch_size,190,256),1).view(batch_size,256)
+
+        x = F.relu(self.f_1b(self.f_1(g_sum)))
+        x = F.relu(self.f_2b(self.f_2(x)))
+        f_theta = self.f_3b(self.f_3(x))
+        sm_output = self.softmax(f_theta)
+
+        # # Combine story-embeddings with question_code
+        # combined = fact_encodings + question_code_facts
+        #
+        # # put combined tensor into story_rnn --> attention-mechanism through question_code
+        # packed_story = torch.nn.utils.rnn.pack_padded_sequence(combined, story_lengths.data.cpu().numpy(), batch_first=True)  # pack story
+        # story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
+        # # remember: because we use the hidden states of the RNN, we don't have to unpack the tensor!
 
         # Do softmax on the encoded story tensor!
-        fc1_out = F.relu(self.fc1(story_hidden[0]))
-        fc1_out = self.dr1(fc1_out)
-        fc2_out = F.relu(self.fc2(fc1_out))
-        fc2_out = self.dr2(fc2_out)
-        fc3_out = F.relu(self.fc3(fc2_out))
-        fc3_out = self.dr3(fc3_out)
-
-        sm_output = self.softmax(fc3_out)
+        # fc1_out = F.relu(self.fc1(rn_input))
+        # fc1_out = self.dr1(fc1_out)
+        # fc2_out = F.relu(self.fc2(fc1_out))
+        # fc2_out = self.dr2(fc2_out)
+        # fc3_out = F.relu(self.fc3(fc2_out))
+        # fc3_out = self.dr3(fc3_out)
+        #
+        # sm_output = self.softmax(fc3_out)
 
         return sm_output
+
+    def generateRN_Input(self, facts, question_code):
+        label = Variable(torch.FloatTensor(range(1, 21)).view(20,1))
+        output = []
+        for i in range(facts.size(0)):
+            a = facts[i]
+            a = torch.cat([label,a],1)
+            object_pairs = list(itertools.combinations(a, 2))
+            RN_inputs = []
+            for object_pair in object_pairs:
+                RN_input = torch.cat([object_pair[0], object_pair[1],question_code[i]], 0)
+                RN_inputs.append(RN_input)
+            RN_inputs = torch.stack(RN_inputs)
+            output.append(RN_inputs)
+        output = torch.cat(output, 0)
+        return output
+
+
+        # a = [[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]]
+        # a = torch.LongTensor(a)
+        # object_pairs = list(itertools.combinations(a, 2))
+        # RN_inputs = []
+        # for object_pair in object_pairs:
+        #     RN_input = torch.cat([object_pair[0], object_pair[1]], 0)
+        #     RN_inputs.append(RN_input)
+        #
+        # torch.stack(RN_inputs)
 
     def _init_hidden(self, batch_size, hidden_size):
         hidden = torch.zeros(self.n_layers * self.n_directions,
