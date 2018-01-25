@@ -13,13 +13,23 @@ class QAFFModel(nn.Module):
     # This modell overfits greatly! Not suitable for the problem, but good to illustrate why we use the RNN!
     def __init__(self, input_size, embedding_size, story_hidden_size, query_hidden_size, output_size, n_layers=1,
                  bidirectional=False, s_len=-1, q_len=-1, custom_embedding=None):
+        """
+        :param input_size: The size of the input for the embedding
+        :param embedding_size: The size of the word embedding
+        :param story_hidden_size: Deprecated. No effect. Kept for compability
+        :param query_hidden_size: Deprecated. No effect. Kept for compability
+        :param output_size: Number of distinct words in the dictionary. Possible answers.
+        :param n_layers: Deprecated. No effect. Kept for compability
+        :param bidirectional: Deprecated. No effect. Kept for compability
+        :param s_len: Len of the padded sequence
+        :param q_len: Len of the padded question
+        :param custom_embedding: Custom embedding
+        """
         super(QAFFModel, self).__init__()
         assert (s_len > 1)
         assert (q_len > 1)
         self.voc_size = input_size
         self.embedding_size = embedding_size
-        self.story_hidden_size = story_hidden_size
-        self.query_hidden_size = query_hidden_size
         self.n_layers = n_layers
         self.s_len = s_len
         self.q_len = q_len
