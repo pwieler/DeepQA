@@ -16,7 +16,7 @@ import os
 
 def main():
     # Can be one or multiple of 1,2,3 or 6 respective to the evaluated tasks.
-    BABI_TASKS = [1]
+    BABI_TASKS = [1,2,3,6]
 
     print('Training for tasks:' + "".join([" QA" + str(t) for t in BABI_TASKS]))
 
@@ -50,10 +50,10 @@ def main():
     ONLY_EVALUATE = False
 
     ## GridSearch Parameters
-    EPOCHS = [10]  # Mostly you only want one epoch param, unless you want equal models with different training times.
+    EPOCHS = [3, 80]  # Mostly you only want one epoch param, unless you want equal models with different training times.
     EMBED_HIDDEN_SIZES = [50]
-    STORY_HIDDEN_SIZE = [100]
-    N_LAYERS = [1]
+    STORY_HIDDEN_SIZE = [500]
+    N_LAYERS = [3]
     BATCH_SIZE = [16]
     LEARNING_RATE = [0.001]  # 0.0001
 

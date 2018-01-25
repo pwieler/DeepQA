@@ -1,4 +1,3 @@
-from typing import List
 import re
 import torch
 import torch.autograd as autograd
