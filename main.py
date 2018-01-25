@@ -15,18 +15,10 @@ from torch.utils.data import DataLoader
 
 import preprocessing.bAbIData as bd
 from model.QAModel import QAModel
-from utils.utils import time_since
+from utils.utils import *
 
 
-def create_var(tensor):
-    if torch.cuda.is_available():
-        return Variable(tensor.cuda())
-    return Variable(tensor.cuda())
 
-def cuda_model(mod):
-    if torch.cuda.is_available():
-        return mod.cuda()
-    return mod
 
 def main():
     # Some old PY 2.6 hacks to include the dirs
@@ -36,7 +28,7 @@ def main():
     # Can be either 1,2,3 or 6 respective to the evaluated task.
     BABI_TASK = 1
 
-    print('Training for task: %d'%BABI_TASK)
+    print('Training for task: %d' % BABI_TASK)
 
     base_path = "data/tasks_1-20_v1-2/shuffled"
 
@@ -46,7 +38,7 @@ def main():
         2: base_path + "/" + "qa2_two-supporting-facts_train.txt",
         3: base_path + "/" + "qa3_three-supporting-facts_train.txt",
         6: base_path + "/" + "qa6_yes-no-questions_train.txt"
-        }
+    }
 
     babi_train_path = {
         0: "data/tasks_1-20_v1-2/en/test_data",
@@ -54,7 +46,7 @@ def main():
         2: base_path + "/" + "qa2_two-supporting-facts_train.txt",
         3: base_path + "/" + "qa3_three-supporting-facts_train.txt",
         6: base_path + "/" + "qa6_yes-no-questions_train.txt"
-        }
+    }
 
     babi_test_path = {
         0: "data/tasks_1-20_v1-2/en/test_data",
@@ -62,7 +54,7 @@ def main():
         2: base_path + "/" + "qa2_two-supporting-facts_test.txt",
         3: base_path + "/" + "qa3_three-supporting-facts_test.txt",
         6: base_path + "/" + "qa6_yes-no-questions_test.txt"
-        }
+    }
 
     PREVIOUSLY_TRAINED_MODEL = None
     ONLY_EVALUATE = False
@@ -181,12 +173,12 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=Fa
                                                                                     i * len(stories),
                                                                                     len(train_loader.dataset),
                                                                                     100. * i * len(stories) / len(
-                                                                                            train_loader.dataset),
+                                                                                        train_loader.dataset),
                                                                                     loss.data[0]))
 
         pred_answers = output.data.max(1)[1]
         correct += pred_answers.eq(
-                answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
+            answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
 
     accuracy = 100. * correct / train_data_size
 
@@ -230,7 +222,7 @@ def test(model, test_loader, criterion, PRINT_LOSS=False):
 
         pred_answers = output.data.max(1)[1]
         correct += pred_answers.eq(
-                answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
+            answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
 
     accuracy = 100. * correct / test_data_size
 
@@ -276,13 +268,13 @@ class GridSearchParamDict():
                         for em in self.embeddings:
                             for ep in self.epochs:
                                 self.params.append({
-                                    "embedding_size":    em,
+                                    "embedding_size": em,
                                     "story_hidden_size": s,
-                                    "layers":            l,
-                                    "batch_size":        b,
-                                    "learning_rate":     lr,
-                                    "epochs":            ep
-                                    })
+                                    "layers": l,
+                                    "batch_size": b,
+                                    "learning_rate": lr,
+                                    "epochs": ep
+                                })
 
         return self.params
 

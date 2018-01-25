@@ -2,6 +2,7 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+from utils.utils import create_var
 
 ## Our Basic Model
 # This is our standard/basic model that reads in the story as a complete set of sentences.
@@ -148,4 +149,4 @@ class QAModel(nn.Module):
     ## This method generates hidden states for the RNNs for first step!
     def _init_hidden(self, batch_size, hidden_size):
         hidden = torch.zeros(self.n_layers * self.n_directions, batch_size, hidden_size)
-        return Variable(hidden)
+        return create_var(hidden)
