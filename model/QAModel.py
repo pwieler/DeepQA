@@ -47,6 +47,12 @@ class QAModel(nn.Module):
         self.fc = nn.Linear(self.story_hidden_size, self.voc_size)
         self.softmax = nn.LogSoftmax()
 
+        ## Dropout-Layer
+
+        self.dr1 = nn.Dropout(0.3)
+        self.dr2 = nn.Dropout(0.3)
+        self.dr3 = nn.Dropout(0.3)
+
     # This is the old forward version that we used before!
     # Below version with question_code performs much better!
     # difference:
@@ -112,6 +118,7 @@ class QAModel(nn.Module):
 
         # Embed Query-Words
         q_e = self.query_embedding(query)
+        q_e = self.dr1(q_e)
 
         # Generate an encoding for the Query-Sequence with RNN
         query_output, query_hidden = self.query_rnn(q_e, query_hidden)
@@ -120,18 +127,26 @@ class QAModel(nn.Module):
         # --> we give this directly into the story_rnn,
         # so that the story_rnn can focus on the question already
         # and can forget unnecessary information!
-        question_code = query_hidden[0]
-        question_code = question_code.view(batch_size, 1, self.query_hidden_size)
+        question_code_single = query_hidden[0]
+        question_code = question_code_single.view(batch_size, 1, self.query_hidden_size)
 
         ## Question-Code has to have the same size as the story-embeddings!
         # --> then we can just add both!
         question_code = question_code.repeat(1, story.size(1), 1)
 
         # Embed Story-Words
-        s_e = self.story_embedding(story)
+        s_e = self.query_embedding(story)
+        s_e = self.dr2(s_e)
 
         # Combine Story-Embeddings with Question-Code
         combined = s_e + question_code
+
+        # hinten auch noch anhängen?? <-- da muss man allerdings aufpassen, wegen padding!
+        combined = torch.cat([question_code_single.view(batch_size,1,-1),combined],1)
+        # <<- Problem, dass die story_lengths nicht passen!
+        story_lengths = story_lengths + 1
+
+        # Dropout wäre noch sinnvoll!!
 
         # Put combined tensor into story_rnn --> kind of attention-mechanism through question_code
         packed_story = torch.nn.utils.rnn.pack_padded_sequence(combined, story_lengths.data.cpu().numpy(),
@@ -141,6 +156,7 @@ class QAModel(nn.Module):
 
         # Do Softmax-Classification on the encoded Story-Tensor!
         fc_output = self.fc(story_hidden[0])
+        fc_output = self.dr3(fc_output)
         sm_output = self.softmax(fc_output)
 
         return sm_output

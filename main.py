@@ -16,7 +16,7 @@ import os
 
 def main():
     # Can be either 1,2,3 or 6 respective to the evaluated task.
-    BABI_TASK = 1
+    BABI_TASK = 2
 
     print('Training for task: %d'%BABI_TASK)
 
