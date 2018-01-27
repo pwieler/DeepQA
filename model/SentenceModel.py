@@ -22,14 +22,14 @@ from torch.autograd import Variable
 #  At the moment it does not outperform our standard model --> but here it is working progress!
 #
 class SentenceModel(nn.Module):
-    def __init__(self, input_size, embedding_size, story_hidden_size, query_hidden_size, output_size, n_layers=1, bidirectional=False):
+    def __init__(self, input_size, embedding_size, story_hidden_size, output_size, n_layers=1, bidirectional=False):
         super(SentenceModel, self).__init__()
 
         ## Definition of Input- & Output-Sizes
         self.voc_size = input_size
         self.embedding_size = embedding_size
         self.story_hidden_size = story_hidden_size
-        self.query_hidden_size = query_hidden_size
+        self.query_hidden_size = embedding_size
         self.n_layers = n_layers
         self.n_directions = int(bidirectional) + 1
 
@@ -44,16 +44,17 @@ class SentenceModel(nn.Module):
                                 bidirectional=bidirectional, batch_first=True, dropout=0.3)
 
         # Reads in all fact-encodings belonging to one query --> generates one encoding for the whole story that is related to the query!
-        self.story_rnn = nn.GRU(embedding_size, story_hidden_size, n_layers,
+        self.story_rnn = nn.GRU(story_hidden_size, story_hidden_size, n_layers,
                                 bidirectional=bidirectional, batch_first=True, dropout=0.3)
 
         # Reads in each word of the query --> generates one encoding for the query
-        self.query_rnn = nn.GRU(embedding_size, query_hidden_size, n_layers,
+        self.query_rnn = nn.GRU(embedding_size, self.query_hidden_size, n_layers,
                                 bidirectional=bidirectional, batch_first=True, dropout=0.3)
 
         ## Definition of Output-Layers --> here we do softmax on the vocabulary_size!
-        self.fc = nn.Linear(story_hidden_size, output_size)
+        self.fc = nn.Linear(story_hidden_size, 20)
         self.softmax = nn.LogSoftmax()
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, story, query, story_lengths, fact_maxlen):
 
@@ -83,13 +84,13 @@ class SentenceModel(nn.Module):
         # --> we give this directly into the story_rnn,
         # so that the story_rnn can focus on the question already
         # and can forget unnecessary information!
-        question_code = query_hidden[0]
-        question_code = question_code.view(batch_size,1,self.query_hidden_size)
+        question_code_single = query_hidden[0]
+        question_code = question_code_single.view(batch_size,1,self.query_hidden_size)
 
         # Create a question-code for every word!
         question_code_words = question_code.view(batch_size,1,1,self.query_hidden_size).repeat(1, story.size(1), fact_maxlen, 1)
         # Create a question-code for every fact!
-        question_code_facts = question_code.repeat(1,story.size(1),1)
+        question_code_facts = question_code.repeat(1,story.size(1),2)
 
         # Embed Words that are contained in the story
         # --> to do that we have to rearrange the tensor, so that we have the form:
@@ -100,12 +101,22 @@ class SentenceModel(nn.Module):
         # Combine word-embeddings with question_code
         s_e = s_e + question_code_words
 
+        # hinten auch noch anhaengen?? <-- da muss man allerdings aufpassen, wegen padding!
+        #combined = torch.cat([question_code_single.view(batch_size,1,-1),combined],1)
+        # <<- Problem, dass die story_lengths nicht passen!
+        #story_lengths = story_lengths + 1
+
         # Read in the words belonging to the facts into the Fact-RNN --> generate fact-encodings
         fact_output, fact_hidden = self.fact_rnn(s_e.view(batch_size*story_size,fact_maxlen,-1), fact_hidden)
         fact_encodings = fact_hidden.view(batch_size, story_size, -1)
 
         # Combine fact_encodings with question_code
         combined = fact_encodings + question_code_facts
+
+        # hinten auch noch anhaengen?? <-- da muss man allerdings aufpassen, wegen padding!
+        combined = torch.cat([question_code.repeat(1,1,2),combined],1)
+        # <<- Problem, dass die story_lengths nicht passen!
+        story_lengths = story_lengths + 1
 
         # put combined tensor into story_rnn --> attention-mechanism through question_code
         packed_story = torch.nn.utils.rnn.pack_padded_sequence(combined, story_lengths.data.cpu().numpy(), batch_first=True)  # pack story
@@ -114,7 +125,7 @@ class SentenceModel(nn.Module):
 
         # Do softmax on the encoded story tensor!
         fc_output = self.fc(story_hidden[0])
-        sm_output = self.softmax(fc_output)
+        sm_output = self.sigmoid(fc_output)
 
         return sm_output
 

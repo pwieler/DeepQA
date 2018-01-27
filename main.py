@@ -20,7 +20,7 @@ def main():
 
     print('Training for task: %d'%BABI_TASK)
 
-    base_path = "data/tasks_1-20_v1-2/en-10k"
+    base_path = "data/tasks_1-20_v1-2/en"
 
     babi_voc_path = {
         0: "data/tasks_1-20_v1-2/en/test_data",
@@ -55,7 +55,7 @@ def main():
     STORY_HIDDEN_SIZE = [100]
     N_LAYERS = [1]
     BATCH_SIZE = [16]
-    LEARNING_RATE = [0.001]  # 0.0001
+    LEARNING_RATE = [0.0001]  # 0.0001
 
     ## Output parameters
     # Makes the training halt between every param set until you close the plot windows. Plots are saved either way.
@@ -99,7 +99,7 @@ def main():
             model.load_state_dict(torch.load(PREVIOUSLY_TRAINED_MODEL))
 
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-        criterion = nn.NLLLoss()
+        criterion = nn.MSELoss() #nn.NLLLoss()
 
         train_loss, test_loss, train_acc, test_acc = conduct_training(model, train_loader, test_loader, optimizer,
                                                                       criterion, only_evaluate=ONLY_EVALUATE,
@@ -132,6 +132,7 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=Fa
         stories = Variable(stories.type(torch.LongTensor))
         queries = Variable(queries.type(torch.LongTensor))
         answers = Variable(answers.type(torch.LongTensor))
+        hints = Variable(hints.type(torch.FloatTensor))
         sl = Variable(sl.type(torch.LongTensor))
         ql = Variable(ql.type(torch.LongTensor))
 
@@ -141,12 +142,13 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=Fa
         ql = ql[perm_idx]
         queries = queries[perm_idx]
         answers = answers[perm_idx]
+        hints = hints[perm_idx]
 
         output = model(stories, queries, sl, 8)
 
         answers_flat = answers.view(-1)
 
-        loss = criterion(output, answers)
+        loss = criterion(output, hints) # <-- now predicting the hints!
 
         total_loss += loss.data[0]
 
@@ -188,10 +190,11 @@ def test(model, test_loader, criterion, PRINT_LOSS=False):
 
     test_loss_history = []
 
-    for stories, queries, answers, sl, ql in test_loader:
+    for stories, queries, answers, sl, ql, hints in test_loader:
         stories = Variable(stories.type(torch.LongTensor))
         queries = Variable(queries.type(torch.LongTensor))
         answers = Variable(answers.type(torch.LongTensor))
+        hints = Variable(hints.type(torch.FloatTensor))
         sl = Variable(sl.type(torch.LongTensor))
         ql = Variable(ql.type(torch.LongTensor))
 
@@ -202,10 +205,11 @@ def test(model, test_loader, criterion, PRINT_LOSS=False):
         ql = ql[perm_idx]
         queries = queries[perm_idx]
         answers = answers[perm_idx]
+        hints = hints[perm_idx]
 
-        output = model(stories, queries, sl, ql)
+        output = model(stories, queries, sl, 8)
 
-        loss = criterion(output, answers.view(-1))
+        loss = criterion(output, hints)
 
         # Calculating elementwise loss  per batch
         test_loss_history.append(loss.data[0])
