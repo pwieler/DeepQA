@@ -128,6 +128,22 @@ class BAbIInstance:
 
         return flat_story
 
+    def get_story(self):
+        flat_story = []
+        index_story = []
+
+        for sentence in self.indexed_story[max(len(self.indexed_story)-20,0):len(self.indexed_story)]:
+            flat_story.append(np.pad(sentence[1], pad_width=(0,8-len(sentence[1])),
+                   mode='constant', constant_values=0))
+            index_story.append(sentence[0])
+
+        index_story=np.array(index_story)
+        index = np.where((index_story==self.hints[0])|(index_story==self.hints[1]))
+        out_hints = np.zeros(20)
+        out_hints[index] = 1
+
+        return flat_story, out_hints, len(flat_story)
+
     def question(self):
         return self.question
 
@@ -241,16 +257,16 @@ class BAbiDataset(Dataset):
         out_question = np.array(self.instances[index].question)
 
         out_answer = self.instances[index].answer[0]
-        out_story_len = len(self.instances[index].flat_story())
+        story, hint_label, out_story_len = self.instances[index].get_story()
         out_question_len = len(self.instances[index].question)
 
         if self.pad_sequences:
-            out_story = np.pad(self.instances[index].flat_story(), pad_width=(0, self.maxlen_story - out_story_len),
+            out_story = np.pad(story, pad_width=((0, 20 - out_story_len),(0,0)),
                                mode='constant', constant_values=0)
         else:
             out_story = np.array(self.instances[index].flat_story())
 
-        return out_story, out_question, out_answer, out_story_len, out_question_len
+        return out_story, out_question, out_answer, out_story_len, out_question_len, hint_label
 
     def __len__(self):
         return len(self.instances)
