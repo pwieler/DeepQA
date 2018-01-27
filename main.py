@@ -24,7 +24,7 @@ def main():
         print("Cuda available: " + str(torch.cuda.is_available()))
 
     # Can be one or multiple of 1,2,3 or 6 respective to the evaluated tasks.
-    BABI_TASKS = [1,2,3,6]
+    BABI_TASKS = [1, 6]
 
     print('Training for tasks:' + "".join([" QA" + str(t) for t in BABI_TASKS]))
 
@@ -54,16 +54,16 @@ def main():
         6: base_path + "/" + "qa6_yes-no-questions_test.txt"
         }
 
-    PREVIOUSLY_TRAINED_MODEL = None
+    PREVIOUSLY_TRAINED_MODEL = "results/2018_01_27_17_06_22_50_200_2_32_20_40_0.0001_20_tasks_qa1_qa6/trained_model.pth"
     ONLY_EVALUATE = False
 
     ## GridSearch Parameters
     EPOCHS = [40]  # Mostly you only want one epoch param, unless you want equal models with different training times.
     EMBED_HIDDEN_SIZES = [50]
-    STORY_HIDDEN_SIZE = [100]
-    N_LAYERS = [3]
-    BATCH_SIZE = [16]
-    LEARNING_RATE = [0.001]  # 0.0001
+    STORY_HIDDEN_SIZE = [200]
+    N_LAYERS = [2]
+    BATCH_SIZE = [32]
+    LEARNING_RATE = [0.0001]  # 0.0001
 
     ## Output parameters
     # Makes the training halt between every param set until you close the plot windows. Plots are saved either way.
@@ -106,7 +106,7 @@ def main():
         ## Initialize Model and Optimizer
         model = QAModel(voc_len, embedding_size, story_hidden_size, voc_len, n_layers, use_cuda=use_cuda)
 
-            # If a path to a state dict of a previously trained model is given, the state will be loaded here.
+        # If a path to a state dict of a previously trained model is given, the state will be loaded here.
         if PREVIOUSLY_TRAINED_MODEL is not None:
             model.load_state_dict(torch.load(PREVIOUSLY_TRAINED_MODEL))
 
@@ -122,7 +122,8 @@ def main():
                                                                       epochs=epochs, use_cuda=use_cuda)
 
         params = [embedding_size, story_hidden_size, n_layers, batch_size, epochs, voc_len, learning_rate, epochs]
-        save_results(BABI_TASKS, train_loss, test_loss, params, train_acc, test_acc, readable_params, model, voc)
+        save_results(BABI_TASKS, train_loss, test_loss, params, train_acc, test_acc, readable_params, model, voc,
+                     param_dict)
 
         # Plot Loss
         if PLOT_LOSS_INTERACTIVE:
@@ -234,12 +235,12 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss_ba
 
         if print_loss_batchwise:
             if i % 1 == 0:
-                print('    [~{}] Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.2f}'.format(time_since(start), epoch,
-                                                                                    i * len(stories),
-                                                                                    len(train_loader.dataset),
-                                                                                    100. * i * len(stories) / len(
-                                                                                            train_loader.dataset),
-                                                                                    loss.data[0]))
+                print('    [~{}] Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.2f}'.format(time_since(epoch_start), epoch,
+                                                                                         i * len(stories),
+                                                                                         len(train_loader.dataset),
+                                                                                         100. * i * len(stories) / len(
+                                                                                                 train_loader.dataset),
+                                                                                         loss.data[0]))
 
         pred_answers = output.data.max(1)[1]
         correct += pred_answers.eq(
@@ -247,7 +248,8 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss_ba
 
     accuracy = 100. * correct / train_data_size
 
-    print('    [~ {}] Training set: Accuracy: {}/{} ({:.0f}%)'.format(time_since(start), correct, train_data_size, accuracy))
+    print('    [~ {}] Training set: Accuracy: {}/{} ({:.0f}%)'.format(time_since(start), correct, train_data_size,
+                                                                      accuracy))
 
     return train_loss_history, accuracy, total_loss  # loss per epoch
 
@@ -276,7 +278,6 @@ def test(model, test_loader, criterion, print_loss_batchwise=False, use_cuda=Tru
     test_loss_history = []
 
     for stories, queries, answers, sl, ql in test_loader:
-
         stories = create_variable(stories.type(torch.LongTensor), use_cuda)
         queries = create_variable(queries.type(torch.LongTensor), use_cuda)
         answers = create_variable(answers.type(torch.LongTensor), use_cuda)
@@ -296,7 +297,8 @@ def test(model, test_loader, criterion, print_loss_batchwise=False, use_cuda=Tru
 
     accuracy = 100. * correct / test_data_size
 
-    print('    [~ {}] Test set: Accuracy: {}/{} ({:.0f}%)'.format(time_since(epoch_start), correct, test_data_size, accuracy))
+    print('    [~ {}] Test set: Accuracy: {}/{} ({:.0f}%)'.format(time_since(epoch_start), correct, test_data_size,
+                                                                  accuracy))
 
     return test_loss_history, accuracy
 
@@ -405,7 +407,7 @@ def concatenated_params(params):
 
 
 def save_results(tasks, train_loss, test_loss, params, train_accuracy, test_accuracy, params_file, model, voc,
-                 make_plots=True):
+                 param_dict, make_plots=True):
     param_str = concatenated_params(params)
 
     tasks_str = "".join(["_qa" + str(task) for task in tasks])
@@ -446,6 +448,7 @@ def save_results(tasks, train_loss, test_loss, params, train_accuracy, test_accu
 
     torch.save(model.state_dict(), fname + "trained_model.pth")
     pickle.dump(voc.voc_dict, open(fname + "vocabulary.pkl", "wb"))
+    pickle.dump(param_dict, open(fname + "params.pkl", "wb"))
 
 
 def create_variable(tensor, use_cuda=True):
@@ -454,6 +457,7 @@ def create_variable(tensor, use_cuda=True):
         return Variable(tensor.cuda())
     else:
         return Variable(tensor)
+
 
 if __name__ == "__main__":
     main()
