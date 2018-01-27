@@ -55,7 +55,7 @@ class SentenceModel(nn.Module):
         self.fc = nn.Linear(story_hidden_size, output_size)
         self.softmax = nn.LogSoftmax()
 
-    def forward(self, story, query, story_lengths, query_lengths, fact_lengths, fact_maxlen):
+    def forward(self, story, query, story_lengths, fact_maxlen):
 
         #story: BATCH_SIZE x STORY_MAX_LEN x FACT_MAX_LEN
         #query: BATCH_SIZE x QUERY_MAX_LEN

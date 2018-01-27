@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
-from model.QAModel import QAModel
+from model.SentenceModel import SentenceModel
 from utils.utils import time_since
 import time
 import os
@@ -20,7 +20,7 @@ def main():
 
     print('Training for task: %d'%BABI_TASK)
 
-    base_path = "data/tasks_1-20_v1-2/shuffled"
+    base_path = "data/tasks_1-20_v1-2/en-10k"
 
     babi_voc_path = {
         0: "data/tasks_1-20_v1-2/en/test_data",
@@ -60,7 +60,7 @@ def main():
     ## Output parameters
     # Makes the training halt between every param set until you close the plot windows. Plots are saved either way.
     PLOT_LOSS_INTERACTIVE = True
-    PRINT_BATCHWISE_LOSS = False
+    PRINT_BATCHWISE_LOSS = True
 
     grid_search_params = GridSearchParamDict(EMBED_HIDDEN_SIZES, STORY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, LEARNING_RATE,
                                              EPOCHS)
@@ -92,7 +92,7 @@ def main():
         train_loader, test_loader = prepare_dataloaders(train_instances, test_instances, batch_size)
 
         ## Initialize Model and Optimizer
-        model = QAModel(voc_len, embedding_size, story_hidden_size, voc_len, n_layers)
+        model = SentenceModel(voc_len, embedding_size, story_hidden_size, voc_len, n_layers)
 
         # If a path to a state dict of a previously trained model is given, the state will be loaded here.
         if PREVIOUSLY_TRAINED_MODEL is not None:
@@ -127,7 +127,7 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=Fa
     # Batch size is 32 training samples and stories are padded to 66 words (each represented by an integer for the
     # vocabulary index)
     # The stories parameter will contain a tensor of size 32x66. Likewise for the other parameters
-    for i, (stories, queries, answers, sl, ql) in enumerate(train_loader, 1):
+    for i, (stories, queries, answers, sl, ql, hints) in enumerate(train_loader, 1):
 
         stories = Variable(stories.type(torch.LongTensor))
         queries = Variable(queries.type(torch.LongTensor))
@@ -142,7 +142,7 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=Fa
         queries = queries[perm_idx]
         answers = answers[perm_idx]
 
-        output = model(stories, queries, sl, ql)
+        output = model(stories, queries, sl, 8)
 
         answers_flat = answers.view(-1)
 
