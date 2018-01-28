@@ -55,7 +55,7 @@ def main():
     STORY_HIDDEN_SIZE = [100]
     N_LAYERS = [1]
     BATCH_SIZE = [16]
-    LEARNING_RATE = [0.0001]  # 0.0001
+    LEARNING_RATE = [0.11]  # 0.0001
 
     ## Output parameters
     # Makes the training halt between every param set until you close the plot windows. Plots are saved either way.

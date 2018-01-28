@@ -2,6 +2,7 @@ from __future__ import print_function
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+import torch.nn.functional as F
 
 
 ## Attention: This model needs another preprocessing:
@@ -52,9 +53,40 @@ class SentenceModel(nn.Module):
                                 bidirectional=bidirectional, batch_first=True, dropout=0.3)
 
         ## Definition of Output-Layers --> here we do softmax on the vocabulary_size!
-        self.fc = nn.Linear(story_hidden_size, 20)
-        self.softmax = nn.LogSoftmax()
+        #self.fc = nn.Linear(story_hidden_size, 20)
+        #self.softmax = nn.LogSoftmax()
         self.sigmoid = nn.Sigmoid()
+
+
+        # FC
+        self.fc1 = nn.Linear(story_hidden_size*21, 256)
+        self.dr1 = nn.Dropout(p=0.4)
+        self.fc2 = nn.Linear(256, 256)
+        self.dr2 = nn.Dropout(p=0.4)
+        self.fc3 = nn.Linear(256, 512)
+        self.dr3 = nn.Dropout(p=0.4)
+        self.fc4 = nn.Linear(512, 256)
+        self.fc5 = nn.Linear(256, 20)
+        #self.softmax = nn.LogSoftmax()
+
+        # dropout_prob = 0.3
+        # self.g_1 = nn.Linear(story_hidden_size*20,256)
+        # self.g_1b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
+        # self.g_2 = nn.Linear(256, 256)
+        # self.g_2b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
+        # self.g_3 = nn.Linear(256, 256)
+        # self.g_3b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
+        # self.g_4 = nn.Linear(256, 256)
+        # self.g_4b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
+        # self.dr2 = nn.Dropout(p=dropout_prob)
+        #
+        # self.f_1 = nn.Linear(256,256)
+        # self.f_1b = nn.BatchNorm1d(256, eps=1e-05, momentum=0.1, affine=True)
+        # self.f_2 = nn.Linear(256,512)
+        # self.f_2b = nn.BatchNorm1d(512, eps=1e-05, momentum=0.1, affine=True)
+        # self.f_3 = nn.Linear(512,output_size)
+        # self.f_3b = nn.BatchNorm1d(output_size, eps=1e-05, momentum=0.1, affine=True)
+        # self.dr3 = nn.Dropout(p=dropout_prob)
 
     def forward(self, story, query, story_lengths, fact_maxlen):
 
@@ -95,7 +127,7 @@ class SentenceModel(nn.Module):
         # Embed Words that are contained in the story
         # --> to do that we have to rearrange the tensor, so that we have the form:
         #       Batch_size x #Words
-        s_e = self.story_embedding(story.view(batch_size,story_size*fact_maxlen))
+        s_e = self.query_embedding(story.view(batch_size,story_size*fact_maxlen))
         s_e = s_e.view(batch_size,story_size,fact_maxlen,-1)
 
         # Combine word-embeddings with question_code
@@ -110,22 +142,17 @@ class SentenceModel(nn.Module):
         fact_output, fact_hidden = self.fact_rnn(s_e.view(batch_size*story_size,fact_maxlen,-1), fact_hidden)
         fact_encodings = fact_hidden.view(batch_size, story_size, -1)
 
-        # Combine fact_encodings with question_code
-        combined = fact_encodings + question_code_facts
-
         # hinten auch noch anhaengen?? <-- da muss man allerdings aufpassen, wegen padding!
-        combined = torch.cat([question_code.repeat(1,1,2),combined],1)
-        # <<- Problem, dass die story_lengths nicht passen!
-        story_lengths = story_lengths + 1
+        combined = torch.cat([question_code.repeat(1,1,2),fact_encodings],1)
 
-        # put combined tensor into story_rnn --> attention-mechanism through question_code
-        packed_story = torch.nn.utils.rnn.pack_padded_sequence(combined, story_lengths.data.cpu().numpy(), batch_first=True)  # pack story
-        story_output, story_hidden = self.story_rnn(packed_story, story_hidden)
-        # remember: because we use the hidden states of the RNN, we don't have to unpack the tensor!
+        fc1_out = F.relu(self.fc1(combined.view(batch_size,-1)))
+        fc2_out = F.relu(self.fc2(fc1_out))
+        fc3_out = F.relu(self.fc3(fc2_out))
+        x = F.relu(self.fc4(fc3_out))
 
         # Do softmax on the encoded story tensor!
-        fc_output = self.fc(story_hidden[0])
-        sm_output = self.sigmoid(fc_output)
+        #fc_output = self.fc(story_hidden[0])
+        sm_output = self.sigmoid(self.fc5(x))
 
         return sm_output
 
