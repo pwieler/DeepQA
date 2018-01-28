@@ -35,7 +35,7 @@ class QAModel(nn.Module):
 
         # info: if we use the old-forward function fc-layer has input-length: "story_hidden_size+query_hidden_size"
         self.fc = nn.Linear(self.story_hidden_size, self.voc_size)
-        self.softmax = nn.LogSoftmax()
+        self.softmax = nn.LogSoftmax(dim=1)
 
     # this is the old forward version! below version with question_code performs much better!!
     def old_forward(self, story, query, story_lengths, query_lengths):
@@ -63,7 +63,7 @@ class QAModel(nn.Module):
         merged = torch.cat([story_hidden[0], query_hidden[0]], 1)
         merged = merged.view(batch_size, -1)
         fc_output = self.fc(merged)
-        sm_output = self.softmax(fc_output, dim=1)
+        sm_output = self.softmax(fc_output)
 
         return sm_output
 
