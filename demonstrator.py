@@ -25,7 +25,7 @@ def main():
     voc, model = load_voc_and_model(args.model_file, args.param_file, args.voc_file, args.use_cuda)
 
     if args.print_voc:
-        print_vocabulary(voc)
+        print(printable_vocabulary(voc))
         print("\n")
 
     story = ""
@@ -52,14 +52,14 @@ def main():
                 continue
 
             if line.lower() == "voc":
-                print(hint_c + "> " + print_vocabulary(voc) + "\033[39m")
+                print(hint_c + "> " + printable_vocabulary(voc) + "\033[39m")
                 continue
 
             if line[-1] == '?':
                 if len(story) is 0:
                     print(hint_c + "> There is no story to answer the question." + normal_c)
                     continue
-
+                print("\n")
                 calculate_and_print(story, line, voc, model, args.use_cuda)
                 print("\n")
             else:
@@ -110,7 +110,7 @@ def check_ending(line):
         return False, line
 
 
-def print_vocabulary(voc: bd.Vocabulary):
+def printable_vocabulary(voc: bd.Vocabulary):
     return "Vocabulary: " + " | ".join(sorted(list(voc.voc_dict.keys())[2:]))
 
 
