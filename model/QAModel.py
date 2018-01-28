@@ -63,7 +63,7 @@ class QAModel(nn.Module):
         merged = torch.cat([story_hidden[0], query_hidden[0]], 1)
         merged = merged.view(batch_size, -1)
         fc_output = self.fc(merged)
-        sm_output = self.softmax(fc_output)
+        sm_output = self.softmax(fc_output, dim=1)
 
         return sm_output
 
