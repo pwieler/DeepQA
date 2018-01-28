@@ -24,7 +24,7 @@ def main():
         print("Cuda available: " + str(torch.cuda.is_available()))
 
     # Can be one or multiple of 1,2,3 or 6 respective to the evaluated tasks.
-    BABI_TASKS = [1, 6]
+    BABI_TASKS = [6]
 
     print('Training for tasks:' + "".join([" QA" + str(t) for t in BABI_TASKS]))
 
@@ -54,16 +54,19 @@ def main():
         6: base_path + "/" + "qa6_yes-no-questions_test.txt"
         }
 
-    PREVIOUSLY_TRAINED_MODEL = "results/2018_01_27_17_06_22_50_200_2_32_20_40_0.0001_20_tasks_qa1_qa6/trained_model.pth"
-    ONLY_EVALUATE = False
+    PREVIOUSLY_TRAINED_PATH = "results/2018_01_28_23_42_49_50_100_1_64_40_42_0.001_40_tasks_qa1_qa2_qa3_qa6/"
+    MODEL_NAME = "trained_model.pth"
+    VOC_FILE_NAME = "vocabulary.pkl"
+
+    ONLY_EVALUATE = True
 
     ## GridSearch Parameters
-    EPOCHS = [40]  # Mostly you only want one epoch param, unless you want equal models with different training times.
+    EPOCHS = [1]  # Mostly you only want one epoch param, unless you want equal models with different training times.
     EMBED_HIDDEN_SIZES = [50]
-    STORY_HIDDEN_SIZE = [200]
-    N_LAYERS = [2]
-    BATCH_SIZE = [32]
-    LEARNING_RATE = [0.0001]  # 0.0001
+    STORY_HIDDEN_SIZE = [100]
+    N_LAYERS = [1]
+    BATCH_SIZE = [64]
+    LEARNING_RATE = [0.001]  # 0.0001
 
     ## Output parameters
     # Makes the training halt between every param set until you close the plot windows. Plots are saved either way.
@@ -79,6 +82,10 @@ def main():
     voc, train_instances, test_instances = load_data([babi_voc_path[t] for t in BABI_TASKS],
                                                      [babi_train_path[t] for t in BABI_TASKS],
                                                      [babi_test_path[t] for t in BABI_TASKS])
+
+    if PREVIOUSLY_TRAINED_PATH is not None:
+        with open(PREVIOUSLY_TRAINED_PATH + VOC_FILE_NAME, 'rb') as f:
+            voc.voc_dict = pickle.load(f)
 
     # Converts the words of the instances from string representation to integer representation using the vocabulary.
     vectorize_data(voc, train_instances, test_instances)
@@ -107,8 +114,8 @@ def main():
         model = QAModel(voc_len, embedding_size, story_hidden_size, voc_len, n_layers, use_cuda=use_cuda)
 
         # If a path to a state dict of a previously trained model is given, the state will be loaded here.
-        if PREVIOUSLY_TRAINED_MODEL is not None:
-            model.load_state_dict(torch.load(PREVIOUSLY_TRAINED_MODEL))
+        if PREVIOUSLY_TRAINED_PATH is not None:
+            model.load_state_dict(torch.load(PREVIOUSLY_TRAINED_PATH + MODEL_NAME))
 
         if use_cuda and torch.cuda.is_available():
             model.cuda()
