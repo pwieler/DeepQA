@@ -3,5 +3,6 @@
 /data
 *__pycache__*
 results/*
+!results/demonstrator_model
 *.pyc
 
