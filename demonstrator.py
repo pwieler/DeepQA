@@ -1,32 +1,165 @@
 import torch
+import argparse
 import pickle
-import operator
+import numpy as np
+import re
 import preprocessing.bAbIData as bd
 from model.QAModel import QAModel
 from torch.autograd import Variable
 
+hint_c = "\033[1;94m"
+normal_c = "\033[39m"
+
 
 def main():
-    model_file = "results/2018_01_27_17_12_55_50_200_2_32_40_40_0.0001_40_tasks_qa1_qa6/trained_model.pth"
-    param_file = "results/2018_01_27_17_12_55_50_200_2_32_40_40_0.0001_40_tasks_qa1_qa6/params.pkl"
-    voc_file = "results/2018_01_27_17_12_55_50_200_2_32_40_40_0.0001_40_tasks_qa1_qa6/vocabulary.pkl"
+    parser = argparse.ArgumentParser(description='Use a trained QAModel and do question answering on provided stories.')
 
-    use_cuda = False
+    parser.add_argument('model_file', help='The file path of the model weights that are to be used.')
+    parser.add_argument('param_file', help='The file path of the parameters that describe this QAModel.')
+    parser.add_argument('voc_file', help='The file path of the vocabulary that belongs to this QAModel.')
+    parser.add_argument("-c -cuda", help="Use cuda for calculations.", action='store_true', dest="use_cuda")
+    parser.add_argument("-v -voc", help="Print the available vocabulary.", action='store_true', dest="print_voc")
 
-    voc, model = load_voc_and_model(model_file, param_file, voc_file, use_cuda)
+    args = parser.parse_args()
 
-    test_story = "John moved to the hallway . John journeyed to the kitchen .".split()
-    test_question = "Where is John ?".split()
+    voc, model = load_voc_and_model(args.model_file, args.param_file, args.voc_file, args.use_cuda)
 
-    story_var, question_var, sl_var, ql_var = input_from_story_question(test_story, test_question, voc, use_cuda)
+    if args.print_voc:
+        print_vocabulary(voc)
+        print("\n")
 
-    answer_id = model(story_var, question_var, sl_var, ql_var)
+    story = ""
 
-    max_index, max_value = max(enumerate(answer_id.data[0]), key=operator.itemgetter(1))
+    print(
+        "Starting interactive mode. 'q' for exit, 'voc' to show available vocabulary, 'story' to print current story, "
+        "'clear' to start new story.")
 
-    print(max_index)
+    while True:
+        try:
+            line = input("Story line or question: ")
+            line = line.strip()
 
-    print(voc)
+            if line == 'q':
+                break
+
+            if line.lower() == "clear":
+                story = ""
+                print(hint_c + "> Cleared Story. \033[39m")
+                continue
+
+            if line.lower() == "story":
+                print(hint_c + "> " + story + "\033[39m")
+                continue
+
+            if line.lower() == "voc":
+                print(hint_c + "> " + print_vocabulary(voc) + "\033[39m")
+                continue
+
+            if line[-1] == '?':
+                if len(story) is 0:
+                    print(hint_c + "> There is no story to answer the question." + normal_c)
+                    continue
+
+                calculate_and_print(story, line, voc, model, args.use_cuda)
+                print("\n")
+            else:
+                if not check_words(line, voc):
+                    continue
+
+                passed, line = check_ending(line)
+
+                if not passed:
+                    continue
+
+                story += line + " "
+
+        except EOFError:
+            break
+
+
+def check_words(line, voc):
+    unknown_tokens = [word for word in tokenize(line) if voc.word_to_id(word) == voc.unknown_id]
+
+    if len(unknown_tokens) is 0:
+        return True
+
+    print(hint_c + "The following words/symbols are not known: " + normal_c)
+    print(unknown_tokens)
+
+    reenter = "<answer>"
+    while reenter not in "yn":
+        reenter = input(hint_c + "Do you want to enter a new sentence instead? ([y]/n) " + normal_c).strip()
+
+    return reenter == 'n'
+
+
+def check_ending(line):
+    if line[-1] is '.':
+        return True, line
+
+    reenter = "<answer>"
+    while reenter not in "yn":
+        reenter = input(
+                hint_c + "Your line does not end with a '.' or '?'. Is this part of the story? ([y]/n) " +
+                normal_c).strip()
+
+    if reenter.lower() != 'n':
+        line += "."
+        return True, line
+    else:
+        return False, line
+
+
+def print_vocabulary(voc: bd.Vocabulary):
+    return "Vocabulary: " + " | ".join(sorted(list(voc.voc_dict.keys())[2:]))
+
+
+def calculate_and_print(story, question, voc, model, use_cuda):
+    story_toks = tokenize(story)
+    question_toks = tokenize(question)
+
+    story_var, question_var, sl_var, ql_var = input_from_story_question(story_toks, question_toks, voc, use_cuda)
+
+    answers = model(story_var, question_var, sl_var, ql_var)
+
+    answers = answers.view(-1)
+
+    top_results = get_most_likely(answers, 3)
+
+    print_results(top_results, voc)
+
+
+def print_results(top_results, voc: bd.Vocabulary):
+    print("{:>10}|{:10}".format("Answer", "Score"))
+
+    for key, value in top_results.items():
+        print("{:>10}|{:<10.6f}".format(voc[key.data[0]], np.exp(value)))
+
+
+def get_most_likely(answers, top_count=5):
+    # story_answers = answers.data.cpu().numpy()[0]
+
+    values, indices = answers.sort(0, descending=True)
+
+    results = {}
+
+    for i in range(min(top_count, len(indices))):
+        results[indices[i]] = values[i].data[0]
+
+    return results
+
+
+def tokenize(text):
+    tokens = []
+    blobs_by_symbols = re.split('([\?\.])',
+                                text)  # For example: ['This is a Sentence', '.', ' This is the following Question',
+    # '?']
+
+    for blob in blobs_by_symbols:
+        blob.strip()
+        tokens += blob.split()
+
+    return tokens
 
 
 def load_voc_and_model(model_file, param_file, voc_file, use_cuda=True):
