@@ -13,7 +13,11 @@ class Vocabulary:
         self.voc_dict = vocabulary_dict if vocabulary_dict is not None else dict()
         self.embedding = embedding
 
-        self.voc_dict["<pad>"] = 0
+        self.padding_id = 0
+        self.unknown_id = 1
+
+        self.voc_dict["<pad>"] = self.padding_id
+        self.voc_dict["<unknown word>"] = self.unknown_id
 
         if file is not None:
             self.extend_with_file(file)
@@ -29,12 +33,23 @@ class Vocabulary:
 
         return rep
 
-    def word_to_id(self, word):
-        # This is a trick entry for words that are non existent.
-        if word is None or word not in self.voc_dict:
-            return len(self.voc_dict)
+    def __getitem__(self, index):
+        answers = [tup[0] for tup in self.voc_dict.items() if tup[1] == index]
 
-        return self.voc_dict[word]
+        if len(answers) is 0:
+            return "<unknown vocabulary>"
+
+        else:
+            return answers[0]
+
+    def word_to_id(self, word):
+
+        word_lower = word.lower()
+        # This is a trick entry for words that are non existent.
+        if word_lower is None or word_lower not in self.voc_dict:
+            return self.unknown_id
+
+        return self.voc_dict[word_lower]
 
     def words_to_ids(self, words):
         return [self.word_to_id(word) for word in words]
@@ -47,7 +62,7 @@ class Vocabulary:
 
     def extend_with_word(self, word):
         if word not in self.voc_dict:
-            self.voc_dict[word] = len(self.voc_dict)
+            self.voc_dict[word.lower()] = len(self.voc_dict)
 
     def extend_with_text(self, text):
         word_set = set()
@@ -68,10 +83,10 @@ class Vocabulary:
             self.extend_with_word(word)
 
     def sort_ids(self):
-        i = 1
+        i = 2
 
         for key in sorted(self.voc_dict.keys()):
-            if self.voc_dict[key] is not 0:
+            if self.voc_dict[key] not in [0, 1]:
                 self.voc_dict[key] = i
                 i += 1
 
@@ -243,8 +258,9 @@ class BAbiDataset(Dataset):
         if self.pad_sequences:
             out_story = np.pad(self.instances[index].flat_story(), pad_width=(0, self.maxlen_story - out_story_len),
                                mode='constant', constant_values=0)
-            out_question = np.pad(self.instances[index].question, pad_width=(0, self.maxlen_question - out_question_len),
-                               mode='constant', constant_values=0)
+            out_question = np.pad(self.instances[index].question,
+                                  pad_width=(0, self.maxlen_question - out_question_len), mode='constant',
+                                  constant_values=0)
         else:
             out_story = np.array(self.instances[index].flat_story())
             out_question = np.array(self.instances[index].question)
