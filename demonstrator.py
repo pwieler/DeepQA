@@ -8,7 +8,8 @@ from model.QAModel import QAModel
 from torch.autograd import Variable
 
 hint_c = "\033[1;94m"
-normal_c = "\033[39m"
+correct_answer_c = "\033[1;32m"
+normal_c = "\033[0m"
 
 
 def main():
@@ -31,34 +32,40 @@ def main():
     story = ""
 
     print(
-        "Starting interactive mode. 'q' for exit, 'voc' to show available vocabulary, 'story' to print current story, "
-        "'clear' to start new story.")
+            "Starting interactive mode. 'q' for exit, 'voc' to show available vocabulary, 'story' to print current "
+            "story, "
+            "'clear' to start new story.")
 
     while True:
         try:
             line = input("Story line or question: ")
             line = line.strip()
 
+            if len(line) == 0:
+                continue
+
             if line == 'q':
                 break
 
             if line.lower() == "clear":
                 story = ""
-                print(hint_c + "> Cleared Story. \033[39m")
+                print(hint_c + "> Cleared Story." + normal_c)
                 continue
 
             if line.lower() == "story":
-                print(hint_c + "> " + story + "\033[39m")
+                print(hint_c + "> " + story + normal_c)
                 continue
 
             if line.lower() == "voc":
-                print(hint_c + "> " + printable_vocabulary(voc) + "\033[39m")
+                print(hint_c + "> " + printable_vocabulary(voc) + normal_c)
                 continue
 
             if line[-1] == '?':
                 if len(story) is 0:
                     print(hint_c + "> There is no story to answer the question." + normal_c)
                     continue
+                print("\n")
+                print(hint_c + "> " + line + normal_c)
                 print("\n")
                 calculate_and_print(story, line, voc, model, args.use_cuda)
                 print("\n")
@@ -132,8 +139,14 @@ def calculate_and_print(story, question, voc, model, use_cuda):
 def print_results(top_results, voc: bd.Vocabulary):
     print("{:>10}|{:10}".format("Answer", "Score"))
 
-    for key, value in top_results.items():
+    for i, (key, value) in enumerate(top_results.items()):
+        if i is 0:
+            print(correct_answer_c, end="")
+
         print("{:>10}|{:<10.6f}".format(voc[key.data[0]], np.exp(value)))
+
+        if i is 0:
+            print(normal_c, end="")
 
 
 def get_most_likely(answers, top_count=5):
