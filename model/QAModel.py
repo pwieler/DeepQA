@@ -25,13 +25,13 @@ class QAModel(nn.Module):
                                                                                                   self.embedding_size)
 
         self.story_rnn = nn.GRU(self.embedding_size, self.story_hidden_size, self.n_layers, bidirectional=bidirectional,
-                                batch_first=True, dropout=0.5)
+                                batch_first=True, dropout=0.7)
 
         self.query_embedding = custom_embedding if custom_embedding is not None else nn.Embedding(self.voc_size,
                                                                                                   self.embedding_size)
 
         self.query_rnn = nn.GRU(self.embedding_size, self.query_hidden_size, self.n_layers, bidirectional=bidirectional,
-                                batch_first=True, dropout=0.5)
+                                batch_first=True, dropout=0.7)
 
         # info: if we use the old-forward function fc-layer has input-length: "story_hidden_size+query_hidden_size"
         self.fc = nn.Linear(self.story_hidden_size, self.voc_size)

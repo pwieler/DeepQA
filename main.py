@@ -3,6 +3,8 @@ from functools import reduce
 import pickle
 import numpy as np
 import preprocessing.bAbIData as bd
+import matplotlib
+matplotlib.use('agg')
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
@@ -15,7 +17,6 @@ import os
 
 
 def main():
-    print("Start of Script")
     start = time.time()
 
     use_cuda = True
@@ -24,7 +25,7 @@ def main():
         print("Cuda available: " + str(torch.cuda.is_available()))
 
     # Can be one or multiple of 1,2,3 or 6 respective to the evaluated tasks.
-    BABI_TASKS = [6]
+    BABI_TASKS = [1,2,3,6]
 
     print('Training for tasks:' + "".join([" QA" + str(t) for t in BABI_TASKS]))
 
@@ -61,11 +62,11 @@ def main():
     ONLY_EVALUATE = False
 
     ## GridSearch Parameters
-    EPOCHS = [80]  # Mostly you only want one epoch param, unless you want equal models with different training times.
+    EPOCHS = [200]  # Mostly you only want one epoch param, unless you want equal models with different training times.
     EMBED_HIDDEN_SIZES = [40]
-    STORY_HIDDEN_SIZE = [150]
-    N_LAYERS = [2]
-    BATCH_SIZE = [8]
+    STORY_HIDDEN_SIZE = [300]
+    N_LAYERS = [3]
+    BATCH_SIZE = [256]
     LEARNING_RATE = [0.001]  # 0.0001
 
     ## Output parameters
@@ -107,6 +108,9 @@ def main():
                               embedding_size, story_hidden_size, n_layers, batch_size, epochs, voc_len, learning_rate)
 
         print(readable_params)
+        
+        print("Number of train instances: {}".format(len(train_instances)))
+        print("Number of test instances: {}\n".format(len(test_instances)))
 
         train_loader, test_loader = prepare_dataloaders(train_instances, test_instances, batch_size)
 
@@ -207,6 +211,7 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss_ba
     total_loss = 0
     correct = 0
     train_loss_history = []
+    max_batch_repetitions = 0
 
     train_data_size = len(train_loader.dataset)
 
@@ -231,7 +236,7 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss_ba
         ql = create_variable(ql.type(torch.LongTensor), use_cuda)
 
 
-        while repeat_training and j < 20:
+        while repeat_training and j < 15:
             output = model(stories, queries, sl, ql)
 
             answers_flat = answers.view(-1)
@@ -247,15 +252,14 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss_ba
             loss_val = loss.data[0]
             j += 1
 
-            if j is 20:
-                print("Repeated training 20 times for a batch.")
-
-            # Update again of loss is especially high
+            # Update again if loss is especially high
             if len(train_loss_history) > 4:
-                repeat_training = loss_val > 1.2 * sum(train_loss_history) / len(train_loss_history)
+                repeat_training = loss_val > 1.0025 * sum(train_loss_history) / len(train_loss_history)
             else:
                 repeat_training = False
 
+        if j > max_batch_repetitions:
+            max_batch_repetitions = j
 
         # Calculating elementwise loss per batch
         train_loss_history.append(loss.data[0])
@@ -275,8 +279,8 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss_ba
 
     accuracy = 100. * correct / train_data_size
 
-    print('    [~ {}] Training set: Accuracy: {}/{} ({:.0f}%)'.format(time_since(start), correct, train_data_size,
-                                                                      accuracy))
+    print('    [~ {}] Training set: Accuracy: {}/{} ({:.0f}%) - Maximum is {} bad batch repetitions'.format(time_since(epoch_start), correct, train_data_size,
+                                                                      accuracy, max_batch_repetitions))
 
     return train_loss_history, accuracy, total_loss  # loss per epoch
 
@@ -455,6 +459,7 @@ def save_results(tasks, train_loss, test_loss, params, train_accuracy, test_accu
     te_acc.tofile(fname + "test_accuracy.csv", sep=";")
 
     if make_plots:
+        plt.switch_backend('agg')
         plt.figure()
         plt.plot(train_loss, label='train-loss', color='b')
         plt.plot(test_loss, label='test-loss', color='r')
