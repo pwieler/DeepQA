@@ -54,18 +54,18 @@ def main():
         6: base_path + "/" + "qa6_yes-no-questions_test.txt"
         }
 
-    PREVIOUSLY_TRAINED_PATH = "results/2018_01_28_23_42_49_50_100_1_64_40_42_0.001_40_tasks_qa1_qa2_qa3_qa6/"
+    PREVIOUSLY_TRAINED_PATH = None
     MODEL_NAME = "trained_model.pth"
     VOC_FILE_NAME = "vocabulary.pkl"
 
-    ONLY_EVALUATE = True
+    ONLY_EVALUATE = False
 
     ## GridSearch Parameters
-    EPOCHS = [1]  # Mostly you only want one epoch param, unless you want equal models with different training times.
-    EMBED_HIDDEN_SIZES = [50]
-    STORY_HIDDEN_SIZE = [100]
-    N_LAYERS = [1]
-    BATCH_SIZE = [64]
+    EPOCHS = [80]  # Mostly you only want one epoch param, unless you want equal models with different training times.
+    EMBED_HIDDEN_SIZES = [40]
+    STORY_HIDDEN_SIZE = [150]
+    N_LAYERS = [2]
+    BATCH_SIZE = [8]
     LEARNING_RATE = [0.001]  # 0.0001
 
     ## Output parameters
@@ -219,26 +219,46 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss_ba
     # The stories parameter will contain a tensor of size 32x66. Likewise for the other parameters
     for i, (stories, queries, answers, sl, ql) in enumerate(train_loader, 1):
 
+        j = 0
+
+        repeat_training = True
+
+
         stories = create_variable(stories.type(torch.LongTensor), use_cuda)
         queries = create_variable(queries.type(torch.LongTensor), use_cuda)
         answers = create_variable(answers.type(torch.LongTensor), use_cuda)
         sl = create_variable(sl.type(torch.LongTensor), use_cuda)
         ql = create_variable(ql.type(torch.LongTensor), use_cuda)
 
-        output = model(stories, queries, sl, ql)
 
-        answers_flat = answers.view(-1)
+        while repeat_training and j < 20:
+            output = model(stories, queries, sl, ql)
 
-        loss = criterion(output, answers)
+            answers_flat = answers.view(-1)
 
-        total_loss += loss.data[0]
+            loss = criterion(output, answers)
+
+            total_loss += loss.data[0]
+
+            model.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            loss_val = loss.data[0]
+            j += 1
+
+            if j is 20:
+                print("Repeated training 20 times for a batch.")
+
+            # Update again of loss is especially high
+            if len(train_loss_history) > 4:
+                repeat_training = loss_val > 1.2 * sum(train_loss_history) / len(train_loss_history)
+            else:
+                repeat_training = False
+
 
         # Calculating elementwise loss per batch
         train_loss_history.append(loss.data[0])
-
-        model.zero_grad()
-        loss.backward()
-        optimizer.step()
 
         if print_loss_batchwise:
             if i % 1 == 0:
