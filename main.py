@@ -16,21 +16,21 @@ from torch.utils.data import DataLoader
 import preprocessing.bAbIData as bd
 from model.QAModel import QAModel
 from utils.utils import create_var, time_since, cuda_model
+import pandas as pd
 
 
 
-
-def main():
+def main(task_i):
     # Some old PY 2.6 hacks to include the dirs
     sys.path.insert(0, 'model/')
     sys.path.insert(0, 'preprocessing/')
     sys.path.insert(0, 'utils/')
     # Can be either 1,2,3 or 6 respective to the evaluated task.
-    BABI_TASK = 1
+    BABI_TASK = task_i
 
     print('Training for task: %d' % BABI_TASK)
 
-    base_path = "data/tasks_1-20_v1-2/shuffled"
+    base_path = "data/tasks_1-20_v1-2/en" #shuffled
 
     babi_voc_path = {
         0: "data/tasks_1-20_v1-2/en/test_data",
@@ -69,7 +69,7 @@ def main():
 
     ## Output parameters
     # Makes the training halt between every param set until you close the plot windows. Plots are saved either way.
-    PLOT_LOSS_INTERACTIVE = True
+    PLOT_LOSS_INTERACTIVE = False
     PRINT_BATCHWISE_LOSS = False
 
     grid_search_params = GridSearchParamDict(EMBED_HIDDEN_SIZES, STORY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, LEARNING_RATE,
@@ -111,17 +111,49 @@ def main():
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
         criterion = nn.NLLLoss()
 
-        train_loss, test_loss, train_acc, test_acc = conduct_training(model, train_loader, test_loader, optimizer,
+        train_loss, test_loss, train_acc, test_acc, eval_lists = conduct_training(model, train_loader, test_loader, optimizer,
                                                                       criterion, only_evaluate=ONLY_EVALUATE,
                                                                       print_loss=PRINT_BATCHWISE_LOSS, epochs=epochs)
 
+        evaluated_out = evaluate_outputs(eval_lists, voc)
         params = [embedding_size, story_hidden_size, n_layers, batch_size, epochs, voc_len, learning_rate, epochs]
-        save_results(BABI_TASK, train_loss, test_loss, params, train_acc, test_acc, readable_params, model, voc)
+        save_results(BABI_TASK, train_loss, test_loss, params, train_acc, test_acc, readable_params, model, voc, evaluated_out)
 
         # Plot Loss
         if PLOT_LOSS_INTERACTIVE:
             plot_data_in_window(train_loss, test_loss, train_acc, test_acc)
 
+
+def replace_to_text_vec(ids_vector, voc):
+    st_list = []
+    for i in range(len(ids_vector)):
+        vec = ids_vector[i, :]
+        vec = vec.tolist()
+        vec = [voc.id_to_word(item)  for item in vec]
+        st = ' '.join(vec)
+        st_list.append(st)
+    return st_list
+
+def evaluate_outputs(eval_lists, voc):
+    # Merge Batches
+    stories = np.vstack([x[1] for x in eval_lists])
+    GT = np.hstack([x[2] for x in eval_lists])
+    story_l = np.hstack([x[3] for x in eval_lists])
+    query_l = np.hstack([x[4] for x in eval_lists])
+    answer = np.hstack([x[5] for x in eval_lists])
+    queries = np.vstack([x[6] for x in eval_lists])
+    tf = np.equal(GT, answer)
+
+    answer_dist = np.vstack([tf, story_l, query_l])
+    answer_dist = np.transpose(answer_dist)
+    answer_dist = pd.DataFrame(answer_dist)
+    answer_dist.columns = ["Correct", "Story Length", "Query Length"]
+    stories_origin = replace_to_text_vec(stories, voc)
+    stories_origin = pd.DataFrame(stories_origin)
+    queries_origin = replace_to_text_vec(queries, voc)
+    queries_origin = pd.DataFrame(queries_origin)
+    results = [["Answers Dis", "Original Stories", "Original Queries"], answer_dist, stories_origin, queries_origin]
+    return results
 
 def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=False):
     total_loss = 0
@@ -197,8 +229,13 @@ def test(model, test_loader, criterion, PRINT_LOSS=False):
     test_data_size = len(test_loader.dataset)
 
     test_loss_history = []
-
+    stats_list = []
     for stories, queries, answers, sl, ql in test_loader:
+        stories_np  = stories.numpy()
+        answers_np = answers.numpy()
+        storyl_np = sl.numpy()
+        queryl_np = ql.numpy()
+        queries_np = queries.numpy()
         stories = Variable(stories.type(torch.LongTensor))
         queries = Variable(queries.type(torch.LongTensor))
         answers = Variable(answers.type(torch.LongTensor))
@@ -221,6 +258,9 @@ def test(model, test_loader, criterion, PRINT_LOSS=False):
         test_loss_history.append(loss.data[0])
 
         pred_answers = output.data.max(1)[1]
+        predicted_answers_np = pred_answers.numpy()
+        stats = [["stories", "Ground Truth", "story length", "Q lenght", "Predicted Answer", "Queries"], stories_np, answers_np, storyl_np, queryl_np, predicted_answers_np, queries_np]
+        stats_list.append(stats)
         correct += pred_answers.eq(
             answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
 
@@ -228,7 +268,7 @@ def test(model, test_loader, criterion, PRINT_LOSS=False):
 
     print('Test set: Accuracy: {}/{} ({:.0f}%)'.format(correct, test_data_size, accuracy))
 
-    return test_loss_history, accuracy
+    return test_loss_history, accuracy, stats_list
 
 
 def prepare_dataloaders(train_instances, test_instances, batch_size, shuffle=True):
@@ -311,7 +351,7 @@ def conduct_training(model, train_loader, test_loader, optimizer, criterion, onl
 
     train_acc_history = []
     test_acc_history = []
-
+    eval_list = []
     ## Start training
     start = time.time()
     if print_loss:
@@ -325,19 +365,18 @@ def conduct_training(model, train_loader, test_loader, optimizer, criterion, onl
                                                            print_loss)
 
         # Test cycle
-        test_loss, test_accuracy = test(model, test_loader, criterion, PRINT_LOSS=False)
+        test_loss, test_accuracy, eval_list = test(model, test_loader, criterion, PRINT_LOSS=False)
 
         # Add Loss to history
         if not only_evaluate:
             train_loss_history = train_loss_history + train_loss
         test_loss_history = test_loss_history + test_loss
-
         # Add Loss to history
         if not only_evaluate:
             train_acc_history.append(train_accuracy)
         test_acc_history.append(test_accuracy)
 
-    return train_loss_history, test_loss_history, train_acc_history, test_acc_history
+    return train_loss_history, test_loss_history, train_acc_history, test_acc_history, eval_list
 
 
 def plot_data_in_window(train_loss, test_loss, train_acc, test_acc):
@@ -365,7 +404,7 @@ def concatenated_params(params):
     return params_str
 
 
-def save_results(task, train_loss, test_loss, params, train_accuracy, test_accuracy, params_file, model, voc,
+def save_results(task, train_loss, test_loss, params, train_accuracy, test_accuracy, params_file, model, voc, eval_results,
                  plots=True):
     param_str = concatenated_params(params)
 
@@ -383,6 +422,9 @@ def save_results(task, train_loss, test_loss, params, train_accuracy, test_accur
     te_loss.tofile(fname + "test_loss.csv", sep=";")
     tr_acc.tofile(fname + "train_accuracy.csv", sep=";")
     te_acc.tofile(fname + "test_accuracy.csv", sep=";")
+    eval_results[1].to_csv(fname + "distribution_answers.csv", sep=";")
+    eval_results[2].to_csv(fname + "Stories.csv", sep=";")
+    eval_results[3].to_csv(fname + "Queries.csv", sep=";")
     if plots == True:
         plt.figure()
         plt.plot(train_loss, label='train-loss', color='b')
@@ -407,4 +449,5 @@ def save_results(task, train_loss, test_loss, params, train_accuracy, test_accur
 
 
 if __name__ == "__main__":
-    main()
+    for i in(1,2,3,6):
+        main(i)
