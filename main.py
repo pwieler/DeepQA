@@ -103,7 +103,7 @@ def main(task_i):
         train_loader, test_loader = prepare_dataloaders(train_instances, test_instances, batch_size)
 
         ## Initialize Model and Optimizer
-        model = QAModelLSTM(voc_len, embedding_size, story_hidden_size, voc_len, n_layers)
+        model = QAModel(voc_len, embedding_size, story_hidden_size, voc_len, n_layers)
         model = cuda_model(model)
         # If a path to a state dict of a previously trained model is given, the state will be loaded here.
         if PREVIOUSLY_TRAINED_MODEL is not None:
