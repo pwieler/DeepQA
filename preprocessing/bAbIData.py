@@ -31,6 +31,10 @@ class Vocabulary:
 
         return rep
 
+    def id_to_word(self, word):
+        rev_subs = {v: k for k, v in self.voc_dict.items()}
+        return rev_subs.get(word)
+
     def word_to_id(self, word):
         # This is a trick entry for words that are non existent.
         if word is None or word not in self.voc_dict:
