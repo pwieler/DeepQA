@@ -8,6 +8,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
 from preprocessing.preprocessing import time_since, generate_data, vectorize_data
 from model.SentenceModel import SentenceModel
+import numpy as np
 
 ## Dataset for QA-Data
 class QADataset(Dataset):
@@ -176,8 +177,8 @@ if __name__ == "__main__":
     #  QUERY_HIDDEN_SIZE should be equal to EMBED_HIDDEN_SIZE
 
     N_LAYERS = 1
-    BATCH_SIZE = 32
-    EPOCHS = 900
+    BATCH_SIZE = 64
+    EPOCHS = 400
     VOC_SIZE = voc_size
     LEARNING_RATE = 0.001
 
@@ -185,8 +186,8 @@ if __name__ == "__main__":
           '\nN_LAYERS: %d\nBATCH_SIZE: %d\nEPOCHS: %d\nVOC_SIZE: %d\nLEARNING_RATE: %f\n\n'
           %(EMBED_HIDDEN_SIZE,STORY_HIDDEN_SIZE,QUERY_HIDDEN_SIZE,N_LAYERS,BATCH_SIZE,EPOCHS,VOC_SIZE,LEARNING_RATE))
 
-    PLOT_LOSS = True
-    PRINT_LOSS = True
+    PLOT_LOSS = False
+    PRINT_LOSS = False
 
 
     ## Create Test & Train-Data
@@ -259,3 +260,14 @@ if __name__ == "__main__":
         plt.plot(train_acc_history,'b')
         plt.plot(test_acc_history,'r')
         plt.show()
+
+    fname = "results/rel/"
+    train_loss = np.array(train_loss_history)
+    test_loss = np.array(test_loss_history)
+    train_acc = np.array(train_acc_history)
+    test_acc = np.array(test_acc_history)
+
+    train_loss.tofile(fname + "train_loss.csv", sep=";")
+    test_loss.tofile(fname + "test_loss.csv", sep=";")
+    train_acc.tofile(fname + "train_acc.csv", sep=";")
+    test_acc.tofile(fname + "test_acc.csv", sep=";")
