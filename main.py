@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader
 
 import preprocessing.bAbIData as bd
 from model.QAModel import QAModel
+from model.QAModelLSTM import  QAModelLSTM
 from utils.utils import create_var, time_since, cuda_model
 import pandas as pd
 
@@ -30,7 +31,7 @@ def main(task_i):
 
     print('Training for task: %d' % BABI_TASK)
 
-    base_path = "data/tasks_1-20_v1-2/en" #shuffled
+    base_path = "data/tasks_1-20_v1-2/shuffled" #shuffled
 
     babi_voc_path = {
         0: "data/tasks_1-20_v1-2/en/test_data",
@@ -102,7 +103,7 @@ def main(task_i):
         train_loader, test_loader = prepare_dataloaders(train_instances, test_instances, batch_size)
 
         ## Initialize Model and Optimizer
-        model = QAModel(voc_len, embedding_size, story_hidden_size, voc_len, n_layers)
+        model = QAModelLSTM(voc_len, embedding_size, story_hidden_size, voc_len, n_layers)
         model = cuda_model(model)
         # If a path to a state dict of a previously trained model is given, the state will be loaded here.
         if PREVIOUSLY_TRAINED_MODEL is not None:
