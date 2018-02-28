@@ -235,11 +235,11 @@ class BAbIInstance:
 
 
 class BAbiDataset(Dataset):
-    def __init__(self, instances, pad_sequences=True):
+    def __init__(self, instances, pad_sequences=True, maxlen_str=-1, maxlen_q = -1):
         self.instances = instances
         self.pad_sequences = pad_sequences
-        self.maxlen_story = max([len(inst.flat_story()) for inst in instances])
-        self.maxlen_question = max([len(inst.question) for inst in instances])
+        self.maxlen_story = max(max([len(inst.flat_story()) for inst in instances]), maxlen_str)
+        self.maxlen_question = max(max([len(inst.question) for inst in instances]), maxlen_q)
 
     def __getitem__(self, index):
         out_question = np.array(self.instances[index].question)

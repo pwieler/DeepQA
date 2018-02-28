@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import copy
 import os
 import pickle
 import sys
@@ -15,13 +16,16 @@ from torch.utils.data import DataLoader
 
 import preprocessing.bAbIData as bd
 from model.QAModel import QAModel
-from model.QAModelLSTM import  QAModelLSTM
+from model.QAModelLSTM import QAModelLSTM
 from utils.utils import create_var, time_since, cuda_model
 import pandas as pd
+import random
+
+random.seed(157)  # Set seed for reproduction
+NoneType = type(None)
 
 
-
-def main(task_i):
+def main(task_i, validation=True):
     # Some old PY 2.6 hacks to include the dirs
     sys.path.insert(0, 'model/')
     sys.path.insert(0, 'preprocessing/')
@@ -31,7 +35,7 @@ def main(task_i):
 
     print('Training for task: %d' % BABI_TASK)
 
-    base_path = "data/tasks_1-20_v1-2/shuffled" #shuffled
+    base_path = "data/tasks_1-20_v1-2/shuffled"  # shuffled
 
     babi_voc_path = {
         0: "data/tasks_1-20_v1-2/en/test_data",
@@ -76,12 +80,17 @@ def main(task_i):
     grid_search_params = GridSearchParamDict(EMBED_HIDDEN_SIZES, STORY_HIDDEN_SIZE, N_LAYERS, BATCH_SIZE, LEARNING_RATE,
                                              EPOCHS)
 
-    voc, train_instances, test_instances = load_data(babi_voc_path[BABI_TASK], babi_train_path[BABI_TASK],
-                                                     babi_test_path[BABI_TASK])
+    voc, train_instances, test_instances, validation_instances = load_data(babi_voc_path[BABI_TASK],
+                                                                           babi_train_path[BABI_TASK],
+                                                                           babi_test_path[BABI_TASK], validation)
 
     # Converts the words of the instances from string representation to integer representation using the vocabulary.
-    vectorize_data(voc, train_instances, test_instances)
+    vectorize_data(voc, train_instances, test_instances,
+                   validation_instances)  # if validation Instances == none, nothing happens
 
+    list_dicts = []
+    list_top_results = []
+    list_epoch_n = []
     for i, param_dict in enumerate(grid_search_params):
         print('\nXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\nParam-Set: %d of %d' % (i + 1, len(grid_search_params)))
 
@@ -100,40 +109,69 @@ def main(task_i):
 
         print(readable_params)
 
-        train_loader, test_loader = prepare_dataloaders(train_instances, test_instances, batch_size)
+        train_loader, test_loader, validation_loader, train_final_loader = prepare_dataloaders(train_instances,
+                                                                                               test_instances,
+                                                                                               batch_size,
+                                                                                               validation_instances=validation_instances)
 
         ## Initialize Model and Optimizer
         model = QAModel(voc_len, embedding_size, story_hidden_size, voc_len, n_layers)
         model = cuda_model(model)
+
+        model_final = QAModel(voc_len, embedding_size, story_hidden_size, voc_len, n_layers)
+        model_final = cuda_model(model_final)
+
         # If a path to a state dict of a previously trained model is given, the state will be loaded here.
         if PREVIOUSLY_TRAINED_MODEL is not None:
             model.load_state_dict(torch.load(PREVIOUSLY_TRAINED_MODEL))
 
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+        optimizer_final = torch.optim.Adam(model_final.parameters(), lr=learning_rate)
         criterion = nn.NLLLoss()
 
-        train_loss, test_loss, train_acc, test_acc, eval_lists = conduct_training(model, train_loader, test_loader, optimizer,
-                                                                      criterion, only_evaluate=ONLY_EVALUATE,
-                                                                      print_loss=PRINT_BATCHWISE_LOSS, epochs=epochs)
+        ptr_loader = test_loader  # Pointer for the validation/test loader
+        if validation == True:
+            ptr_loader = validation_loader
 
-        evaluated_out = evaluate_outputs(eval_lists, voc)
+        train_loss, val_loss, train_acc, val_acc, eval_lists, test_acc_history, test_loss_history = conduct_training(model,model_final, train_final_loader, train_loader,
+                                                                                ptr_loader, test_loader,
+                                                                                optimizer,
+                                                                                optimizer_final,
+                                                                                criterion, only_evaluate=ONLY_EVALUATE,
+                                                                                print_loss=PRINT_BATCHWISE_LOSS,
+                                                                                epochs=epochs)
+
+        evaluated_out = evaluate_outputs(eval_lists, voc)  # Evaluated output. Contains The Real Data
+
         params = [embedding_size, story_hidden_size, n_layers, batch_size, epochs, voc_len, learning_rate, epochs]
-        save_results(BABI_TASK, train_loss, test_loss, params, train_acc, test_acc, readable_params, model, voc, evaluated_out)
+
+        save_results(BABI_TASK, train_loss, val_loss, params, train_acc, val_acc, readable_params, model, voc,
+                     evaluated_out, test_loss_history, test_acc_history)
 
         # Plot Loss
         if PLOT_LOSS_INTERACTIVE:
-            plot_data_in_window(train_loss, test_loss, train_acc, test_acc)
+            plot_data_in_window(train_loss, val_loss, train_acc, val_acc)
 
+
+def replace_to_word(ids_vector, voc):
+    st_list = []
+    for i in range(len(ids_vector)):
+        vec = [ids_vector[i]]
+        vec = [voc.id_to_word(item) for item in vec]
+        st = ' '.join(vec)
+        st_list.append(st)
+    return st_list
 
 def replace_to_text_vec(ids_vector, voc):
     st_list = []
     for i in range(len(ids_vector)):
         vec = ids_vector[i, :]
         vec = vec.tolist()
-        vec = [voc.id_to_word(item)  for item in vec]
+        vec = [voc.id_to_word(item) for item in vec]
         st = ' '.join(vec)
         st_list.append(st)
     return st_list
+
 
 def evaluate_outputs(eval_lists, voc):
     # Merge Batches
@@ -143,6 +181,8 @@ def evaluate_outputs(eval_lists, voc):
     query_l = np.hstack([x[4] for x in eval_lists])
     answer = np.hstack([x[5] for x in eval_lists])
     queries = np.vstack([x[6] for x in eval_lists])
+    best_3 = np.vstack([x[7] for x in eval_lists])
+    best_5 = np.vstack([x[8] for x in eval_lists])
     tf = np.equal(GT, answer)
 
     answer_dist = np.vstack([tf, story_l, query_l])
@@ -153,8 +193,13 @@ def evaluate_outputs(eval_lists, voc):
     stories_origin = pd.DataFrame(stories_origin)
     queries_origin = replace_to_text_vec(queries, voc)
     queries_origin = pd.DataFrame(queries_origin)
-    results = [["Answers Dis", "Original Stories", "Original Queries"], answer_dist, stories_origin, queries_origin]
+    best_3_origin = replace_to_text_vec(best_3, voc)
+    best_3_origin = pd.DataFrame(best_3_origin)
+    best_5_origin = pd.DataFrame(replace_to_text_vec(best_5, voc))
+    answer = pd.DataFrame(replace_to_word(answer,voc))
+    results = [["Answers Dis", "Original Stories", "Original Queries", "Best 3" , "Best 5", "Answers"], answer_dist, stories_origin, queries_origin, best_3_origin, best_5_origin, answer]
     return results
+
 
 def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=False):
     total_loss = 0
@@ -210,6 +255,7 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=Fa
                                                                                     loss.data[0]))
 
         pred_answers = output.data.max(1)[1]
+        # TODO
         correct += pred_answers.eq(
             answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
 
@@ -219,7 +265,7 @@ def train(model, train_loader, optimizer, criterion, start, epoch, print_loss=Fa
 
     return train_loss_history, accuracy, total_loss  # loss per epoch
 
-
+#This method is replaced by test-final for the ecaluation setting
 def test(model, test_loader, criterion, PRINT_LOSS=False):
     model.eval()
 
@@ -232,7 +278,7 @@ def test(model, test_loader, criterion, PRINT_LOSS=False):
     test_loss_history = []
     stats_list = []
     for stories, queries, answers, sl, ql in test_loader:
-        stories_np  = stories.numpy()
+        stories_np = stories.numpy()
         answers_np = answers.numpy()
         storyl_np = sl.numpy()
         queryl_np = ql.numpy()
@@ -258,9 +304,10 @@ def test(model, test_loader, criterion, PRINT_LOSS=False):
         # Calculating elementwise loss  per batch
         test_loss_history.append(loss.data[0])
 
-        pred_answers = output.data.max(1)[1]
+        pred_answers = output.data.topk(5)[1]
         predicted_answers_np = pred_answers.numpy()
-        stats = [["stories", "Ground Truth", "story length", "Q lenght", "Predicted Answer", "Queries"], stories_np, answers_np, storyl_np, queryl_np, predicted_answers_np, queries_np]
+        stats = [["stories", "Ground Truth", "story length", "Q lenght", "Predicted Answer", "Queries"], stories_np,
+                 answers_np, storyl_np, queryl_np, predicted_answers_np, queries_np]
         stats_list.append(stats)
         correct += pred_answers.eq(
             answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
@@ -272,14 +319,107 @@ def test(model, test_loader, criterion, PRINT_LOSS=False):
     return test_loss_history, accuracy, stats_list
 
 
-def prepare_dataloaders(train_instances, test_instances, batch_size, shuffle=True):
-    train_dataset = bd.BAbiDataset(train_instances)
-    test_dataset = bd.BAbiDataset(test_instances)
+def test_final(model, test_loader, criterion, PRINT_LOSS=False):
+    model.eval()
+
+    if PRINT_LOSS:
+        print("evaluating trained model ...")
+
+    correct = 0
+    test_data_size = len(test_loader.dataset)
+    correct_best_3 = 0
+    correct_best_5 = 0
+    test_loss_history = []
+    stats_list = []
+    for stories, queries, answers, sl, ql in test_loader:
+        stories_np = stories.numpy()
+        answers_np = answers.numpy()
+        storyl_np = sl.numpy()
+        queryl_np = ql.numpy()
+        queries_np = queries.numpy()
+        stories = Variable(stories.type(torch.LongTensor))
+        queries = Variable(queries.type(torch.LongTensor))
+        answers = Variable(answers.type(torch.LongTensor))
+        sl = Variable(sl.type(torch.LongTensor))
+        ql = Variable(ql.type(torch.LongTensor))
+
+        # Sort stories by their length
+        sl, perm_idx = sl.sort(0, descending=True)
+        stories = stories[perm_idx]
+        ql = ql[perm_idx]
+        queries = queries[perm_idx]
+        answers = answers[perm_idx]
+        answers_np = answers.data.numpy()
+        stories_np = stories.data.numpy()
+        output = model(stories, queries, sl, ql)
+
+        loss = criterion(output, answers.view(-1))
+
+        # Calculating elementwise loss  per batch
+        test_loss_history.append(loss.data[0])
+
+        pred_answers = output.data.max(1)[1]
+        pred_top3 = output.data.topk(dim=1, k=3)[1]
+        pred_top5 = output.data.topk(dim=1, k=5)[1]
+
+        predicted_answers_np = pred_answers.numpy()
+
+        pred_top3_np = pred_top3.numpy()
+        pred_top5_np = pred_top5.numpy()
+
+        top_3_status = [int(answers_np[i] in pred_top3_np[i, :].tolist()) for i in
+                        range(len(answers_np))]  # Number of correct predictions in the top 3 predictions
+        top_5_status = [int(answers_np[i] in pred_top5_np[i, :].tolist()) for i in range(len(answers_np))]
+
+        stats = [["stories", "Ground Truth", "story length", "Q lenght", "Predicted Answer", "Queries", "Top 3 Answers",
+                  "Top 5 answers"],
+                 stories_np, answers_np, storyl_np, queryl_np, predicted_answers_np, queries_np, pred_top3_np,
+                 pred_top5_np]
+        stats_list.append(stats)
+        correct += pred_answers.eq(
+            answers.data.view_as(pred_answers)).cpu().sum()  # calculate how many labels are correct
+        correct_best_3 += sum(top_3_status)
+        correct_best_5 += sum(top_5_status)
+
+    accuracy = 100. * correct / test_data_size
+    accuracy_top3 = 100. * correct_best_3 / test_data_size
+    accuracy_top5 = 100. * correct_best_5 / test_data_size
+
+    print('Test set: Accuracy: {}/{} ({:.0f}%)'.format(correct, test_data_size, accuracy))
+    print('Test set: Accuracy (Best 3): {}/{} ({:.0f}%)'.format(correct_best_3, test_data_size, accuracy_top3))
+    print('Test set: Accuracy (Best 5): {}/{} ({:.0f}%)'.format(correct_best_5, test_data_size, accuracy_top5))
+
+    return test_loss_history, accuracy, stats_list, accuracy_top3, accuracy_top5
+
+
+def prepare_dataloaders(train_instances, test_instances, batch_size, shuffle=True, validation_instances=None):
+    tstr_len = max([len(inst.flat_story()) for inst in train_instances])
+    tq_len = max([len(inst.question) for inst in train_instances])
+    print(tq_len)
+    if type(validation_instances) != NoneType:
+        maxstr_val = max([len(inst.flat_story()) for inst in validation_instances])
+        tstr_len = max(maxstr_val, tstr_len)
+
+        maxq_val = max([len(inst.question) for inst in validation_instances])
+        tq_len = max(maxq_val, tq_len)
+        print(maxq_val)
+
+        validation_dataset = bd.BAbiDataset(validation_instances, maxlen_str=tstr_len, maxlen_q=tq_len)
+
+    train_dataset = bd.BAbiDataset(train_instances, maxlen_str=tstr_len, maxlen_q=tq_len)
+    test_dataset = bd.BAbiDataset(test_instances, maxlen_str=tstr_len, maxlen_q=tq_len)
+
+    train_final_instances = validation_instances.copy() + validation_instances.copy()
+    train_final_dataset = bd.BAbiDataset(train_final_instances, maxlen_str=tstr_len, maxlen_q=tq_len)
+    train_final_loader = DataLoader(dataset=train_final_dataset, batch_size=batch_size, shuffle=True)
 
     train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=True)
+    validation_loader = None
+    if type(validation_instances) != NoneType:
+        validation_loader = DataLoader(dataset=validation_dataset, batch_size=batch_size, shuffle=True)
 
-    return train_loader, test_loader
+    return train_loader, test_loader, validation_loader, train_final_loader
 
 
 class GridSearchParamDict():
@@ -320,7 +460,7 @@ class GridSearchParamDict():
         return self.params
 
 
-def load_data(voc_path, train_path, test_path):
+def load_data(voc_path, train_path, test_path, split_validation=False):
     voc = bd.Vocabulary()
     train_instances = []
     test_instances = []
@@ -331,28 +471,48 @@ def load_data(voc_path, train_path, test_path):
 
     voc.sort_ids()
 
-    return voc, train_instances, test_instances
+    validation_instances = None
+    if split_validation:
+        ids_l = list(range(len(train_instances)))
+        val_size = int((len(ids_l) / 100) * 15)  # select 10% for validation
+        val_sample = random.sample(ids_l, val_size)
+        validation_instances = [train_instances[x] for x in val_sample]
+        train_instances = [train_instances[i] for i in range(len(train_instances)) if i not in val_sample]
+
+    return voc, train_instances, test_instances, validation_instances
 
 
-def vectorize_data(voc, train_instances, test_instances):
+def vectorize_data(voc, train_instances, test_instances, validation_instances=None):
     # At this point, training instances have been loaded with real word sentences.
     # Using the vocabulary we convert the words into integer representations, so they can converted with an embedding
     # later on.
-    for inst in train_instances:
-        inst.vectorize(voc)
-
-    for inst in test_instances:
-        inst.vectorize(voc)
+    for inst1 in train_instances:
+        inst1.vectorize(voc)
 
 
-def conduct_training(model, train_loader, test_loader, optimizer, criterion, only_evaluate=False, print_loss=False,
+
+    for inst2 in test_instances:
+        inst2.vectorize(voc)
+
+    if type(validation_instances) != NoneType:
+        for inst3 in validation_instances:
+            inst3.vectorize(voc)
+
+
+def conduct_training(model,model_final, train_final_loader, train_loader, validation_loader,test_loader, optimizer,optimizer_final, criterion,
+                     only_evaluate=False,
+                     print_loss=False,
                      epochs=1):
     train_loss_history = []
+    validation_loss_history = []
     test_loss_history = []
 
     train_acc_history = []
+    validation_acc_history = []
     test_acc_history = []
+
     eval_list = []
+
     ## Start training
     start = time.time()
     if print_loss:
@@ -366,18 +526,39 @@ def conduct_training(model, train_loader, test_loader, optimizer, criterion, onl
                                                            print_loss)
 
         # Test cycle
-        test_loss, test_accuracy, eval_list = test(model, test_loader, criterion, PRINT_LOSS=False)
+        validation_loss, validation_accuracy, eval_list, validation_accuracy_top_3, validation_accuracy_top_5 = test_final(
+            model,
+            validation_loader,
+            criterion,
+            PRINT_LOSS=False)
 
         # Add Loss to history
-        if not only_evaluate:
-            train_loss_history = train_loss_history + train_loss
+        validation_loss_history = validation_loss_history + validation_loss
+        # Add Loss to history
+        validation_acc_history.append(validation_accuracy)
+    epochs_final = np.argmax(np.array(validation_acc_history))
+    model.eval()
+    for epoch in range(1, epochs_final + 1):
+        print("Epoche: %d" % epoch)
+        # Train cycle
+        print("Test Final")
+        train_loss, train_accuracy, total_loss = train(model_final, train_final_loader, optimizer_final, criterion, start,
+                                                           epoch, False)
+
+        # Test cycle
+        test_loss, test_accuracy, eval_list_final, test_accuracy_top_3, test_accuracy_top_5 = test_final(model_final,
+                                                                                                   test_loader,
+                                                                                                   criterion,
+                                                                                                   PRINT_LOSS=True)
+
+        # Add Loss to history
+        train_loss_history = train_loss_history + train_loss
         test_loss_history = test_loss_history + test_loss
         # Add Loss to history
-        if not only_evaluate:
-            train_acc_history.append(train_accuracy)
+        train_acc_history.append(train_accuracy)
         test_acc_history.append(test_accuracy)
 
-    return train_loss_history, test_loss_history, train_acc_history, test_acc_history, eval_list
+    return train_loss_history, validation_loss_history, train_acc_history, validation_acc_history, eval_list_final, test_acc_history, test_loss_history
 
 
 def plot_data_in_window(train_loss, test_loss, train_acc, test_acc):
@@ -405,8 +586,8 @@ def concatenated_params(params):
     return params_str
 
 
-def save_results(task, train_loss, test_loss, params, train_accuracy, test_accuracy, params_file, model, voc, eval_results,
-                 plots=True):
+def save_results(task, train_loss, validation_loss, params, train_accuracy, validation_accuracy, params_file, model, voc,
+                 eval_results, test_loss, test_accuracy, plots=True):
     param_str = concatenated_params(params)
 
     date = str(time.strftime("%Y:%m:%d:%H:%M:%S"))
@@ -416,27 +597,35 @@ def save_results(task, train_loss, test_loss, params, train_accuracy, test_accur
     except:
         os.mkdir(fname)
     tr_loss = np.array(train_loss)
-    te_loss = np.array(test_loss)
+    val_loss = np.array(validation_loss)
     tr_acc = np.array(train_accuracy)
+    validation_acc = np.array(validation_accuracy)
     te_acc = np.array(test_accuracy)
-    tr_loss.tofile(fname + "train_loss.csv", sep=";")
-    te_loss.tofile(fname + "test_loss.csv", sep=";")
-    tr_acc.tofile(fname + "train_accuracy.csv", sep=";")
+    te_loss = np.array(test_loss)
     te_acc.tofile(fname + "test_accuracy.csv", sep=";")
+    te_loss.tofile(fname + "test_loss.csv", sep=";")
+    tr_loss.tofile(fname + "train_loss.csv", sep=";")
+    val_loss.tofile(fname + "val_loss.csv", sep=";")
+    tr_acc.tofile(fname + "train_accuracy.csv", sep=";")
+    validation_acc.tofile(fname + "val_accuracy.csv", sep=";")
     eval_results[1].to_csv(fname + "distribution_answers.csv", sep=";")
     eval_results[2].to_csv(fname + "Stories.csv", sep=";")
     eval_results[3].to_csv(fname + "Queries.csv", sep=";")
+    eval_results[4].to_csv(fname + "Best_3.csv", sep=";")
+    eval_results[5].to_csv(fname + "Best_5.csv", sep=";")
+    eval_results[6].to_csv(fname + "Answer.csv", sep=";")
+
     if plots == True:
         plt.figure()
         plt.plot(train_loss, label='train-loss', color='b')
-        plt.plot(test_loss, label='test-loss', color='r')
+        plt.plot(validation_loss, label='val-loss', color='r')
         plt.xlabel("Batch")
         plt.ylabel("Average Elementwise Loss per Batch")
         plt.legend()
         plt.savefig(fname + "loss_history.png")
         plt.figure()
         plt.plot(train_accuracy, label='train-accuracy', color='b')
-        plt.plot(test_accuracy, label='test-accuracy', color='r')
+        plt.plot(validation_accuracy, label='val-accuracy', color='r')
         plt.xlabel("Epoch")
         plt.ylabel("Correct answers in %")
         plt.legend()
@@ -450,5 +639,5 @@ def save_results(task, train_loss, test_loss, params, train_accuracy, test_accur
 
 
 if __name__ == "__main__":
-    for i in(1,2,3,6):
+    for i in (1, 2, 3, 6):
         main(i)
