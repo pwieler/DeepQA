@@ -1,3 +1,4 @@
+
 from __future__ import print_function
 
 import copy
@@ -69,7 +70,7 @@ def main(task_i, validation=True):
     EMBED_HIDDEN_SIZES = [50]
     STORY_HIDDEN_SIZE = [100]
     N_LAYERS = [1]
-    BATCH_SIZE = [16]
+    BATCH_SIZE = [32]
     LEARNING_RATE = [0.001]  # 0.0001
 
     ## Output parameters
@@ -115,10 +116,10 @@ def main(task_i, validation=True):
                                                                                                validation_instances=validation_instances)
 
         ## Initialize Model and Optimizer
-        model = QAModel(voc_len, embedding_size, story_hidden_size, voc_len, n_layers)
+        model = QAModelLSTM(voc_len, embedding_size, story_hidden_size, voc_len, n_layers)
         model = cuda_model(model)
 
-        model_final = QAModel(voc_len, embedding_size, story_hidden_size, voc_len, n_layers)
+        model_final = QAModelLSTM(voc_len, embedding_size, story_hidden_size, voc_len, n_layers)
         model_final = cuda_model(model_final)
 
         # If a path to a state dict of a previously trained model is given, the state will be loaded here.
@@ -409,7 +410,10 @@ def prepare_dataloaders(train_instances, test_instances, batch_size, shuffle=Tru
     train_dataset = bd.BAbiDataset(train_instances, maxlen_str=tstr_len, maxlen_q=tq_len)
     test_dataset = bd.BAbiDataset(test_instances, maxlen_str=tstr_len, maxlen_q=tq_len)
 
-    train_final_instances = validation_instances.copy() + validation_instances.copy()
+    if (type(validation_instances) != NoneType):
+        train_final_instances = train_instances.copy() + validation_instances.copy()
+    else:
+        train_final_instances = train_instances.copy()
     train_final_dataset = bd.BAbiDataset(train_final_instances, maxlen_str=tstr_len, maxlen_q=tq_len)
     train_final_loader = DataLoader(dataset=train_final_dataset, batch_size=batch_size, shuffle=True)
 
@@ -474,7 +478,7 @@ def load_data(voc_path, train_path, test_path, split_validation=False):
     validation_instances = None
     if split_validation:
         ids_l = list(range(len(train_instances)))
-        val_size = int((len(ids_l) / 100) * 15)  # select 10% for validation
+        val_size = int((len(ids_l) / 100) * 20)  # select 10% for validation
         val_sample = random.sample(ids_l, val_size)
         validation_instances = [train_instances[x] for x in val_sample]
         train_instances = [train_instances[i] for i in range(len(train_instances)) if i not in val_sample]
@@ -538,7 +542,8 @@ def conduct_training(model,model_final, train_final_loader, train_loader, valida
         validation_acc_history.append(validation_accuracy)
     epochs_final = np.argmax(np.array(validation_acc_history))
     model.eval()
-    for epoch in range(1, epochs_final + 1):
+    bonus_epoch = 1
+    for epoch in range(1, epochs_final + 1 + bonus_epoch):
         print("Epoche: %d" % epoch)
         # Train cycle
         print("Test Final")
